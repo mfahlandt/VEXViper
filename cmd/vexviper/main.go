@@ -100,7 +100,7 @@ func (c *commonFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug|info|warn|error")
 	fs.BoolVar(&c.logJSON, "log-json", false, "emit JSON logs")
 	fs.StringVar(&c.bomhort, "bomhort", "", "BOMHort base URL (overrides config)")
-	fs.StringVar(&c.provider, "provider", "", "assessment provider: heuristic|openai|github|mcptool (overrides config)")
+	fs.StringVar(&c.provider, "provider", "", "assessment provider: heuristic|openai|github|copilot|mcptool (overrides config)")
 }
 
 func (c *commonFlags) load(stderr io.Writer) (config.Config, *slog.Logger, error) {

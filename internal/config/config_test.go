@@ -115,6 +115,7 @@ func TestValidateErrors(t *testing.T) {
 		"confidence range":   func(c *Config) { c.LLM.MinConfidence = 1.5 },
 		"openai needs model": func(c *Config) { c.LLM.Provider = ProviderOpenAI; c.LLM.OpenAI.Model = "" },
 		"github needs token": func(c *Config) { c.LLM.Provider = ProviderGitHub },
+		"copilot command":    func(c *Config) { c.LLM.Provider = ProviderCopilot; c.LLM.Copilot.Command = "" },
 		"github needs model": func(c *Config) { c.LLM.Provider = ProviderGitHub; c.LLM.GitHub.Token = "t"; c.LLM.GitHub.Model = "" },
 		"mcp stdio command":  func(c *Config) { c.LLM.Provider = ProviderMCPTool },
 		"mcp http url":       func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Transport = MCPTransportHTTP },

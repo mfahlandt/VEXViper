@@ -307,6 +307,7 @@ func TestNewProvider(t *testing.T) {
 		{config.LLM{Provider: config.ProviderHeuristic}, false, "heuristic"},
 		{config.LLM{Provider: config.ProviderOpenAI, OpenAI: config.OpenAI{Model: "m"}}, false, "openai:m+heuristic"},
 		{config.LLM{Provider: config.ProviderGitHub, GitHub: config.GitHub{BaseURL: "http://x", Model: "openai/gpt-4.1", Token: "ghp"}}, false, "github:openai/gpt-4.1+heuristic"},
+		{config.LLM{Provider: config.ProviderCopilot, Copilot: config.Copilot{Command: "copilot", Model: "gpt-5"}}, false, "copilot:gpt-5+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportStdio, Tool: "t"}}, false, "mcptool:t+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportHTTP, Tool: "t"}}, false, "mcptool:t+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: "carrier-pigeon"}}, true, ""},

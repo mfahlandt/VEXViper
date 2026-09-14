@@ -118,6 +118,7 @@ endpoint would remove the need to page through all statements (proposal 2/3 abov
 | Route | Programmatic? | Status |
 |---|---|---|
 | **GitHub Models** (`provider: github`) — `https://models.github.ai/inference`, OpenAI-compatible, auth `Bearer <GitHub token>`, header `X-GitHub-Api-Version` | yes (CI, CronJob) | **supported**; billed to the GitHub/Copilot plan; models like `openai/gpt-4.1`, `openai/o4-mini`, `meta/llama-…`. Token: fine-grained PAT with `models: read` or Actions `GITHUB_TOKEN` with `permissions: models: read`. |
+| **Copilot CLI, non-interactive** (`provider: copilot`) — `copilot -p <prompt> -s --no-ask-user --deny-tool=shell/write/edit`; auth = the CLI's login (`/login`, `gh auth login`, `GH_TOKEN`/`COPILOT_GITHUB_TOKEN`) | yes (laptop, CI runner with a logged-in CLI) | **supported & verified**; ~15 s/finding; official scripting mode of the Copilot CLI, covered by the Copilot seat. `in_repo: true` lets it read the product checkout. |
 | **Copilot as MCP host** — VS Code Copilot Chat / Copilot CLI / Copilot coding agent calls `vexviper mcp-serve` tools (`list_findings` → `get_repo_context` → model reasons → `draft_vex` → `upload_vex`) | interactive / agentic | supported today; the Copilot model does the assessment inside the host, human in the loop. |
 | Copilot Chat internal API (`api.githubcopilot.com` via token exchange) | — | **not implemented**: undocumented, ToS restricts to Copilot clients, breaks without notice. |
 

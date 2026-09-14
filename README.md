@@ -22,7 +22,8 @@ BOMHort findings ──► resolve product repo ──► clone + govulncheck + 
    products, symbol references, OSV details;
 3. asks an assessment provider for `status/justification/confidence/reasoning` per finding —
    a rules-only **heuristic** (default, offline), any **OpenAI-compatible** endpoint,
-   **GitHub Models** (your GitHub/Copilot account), or a tool on a **configurable MCP server**;
+   **GitHub Models** or the **GitHub Copilot CLI** (your Copilot subscription), or a tool on a
+   **configurable MCP server**;
 4. applies guardrails and emits an OpenVEX document built with
    [`openvex/go-vex`](https://github.com/openvex/go-vex) whose every statement passes
    `Statement.Validate()` and reuses BOMHort's `(vuln_id, purl)` verbatim so BOMHort's
@@ -120,10 +121,11 @@ every key overridable by `VEXVIPER_<SECTION>_<KEY>` and secrets via `*_env` indi
 |---|---|---|---|
 | `bomhort.url` | `VEXVIPER_BOMHORT_URL` | `http://localhost:8080` | BOMHort API gateway |
 | `bomhort.api_key_env` | `BOMHORT_API_KEY` | | X-API-Key for uploads |
-| `llm.provider` | `VEXVIPER_LLM_PROVIDER` | `heuristic` | `heuristic` \| `openai` \| `github` \| `mcptool` |
+| `llm.provider` | `VEXVIPER_LLM_PROVIDER` | `heuristic` | `heuristic` \| `openai` \| `github` \| `copilot` \| `mcptool` |
 | `llm.min_confidence` | `VEXVIPER_LLM_MIN_CONFIDENCE` | `0.6` | below → `under_investigation` |
 | `llm.openai.{base_url,model,api_key_env}` | `VEXVIPER_OPENAI_*` | OpenAI / `gpt-4o-mini` | any OpenAI-compatible endpoint (Azure, GitHub Models, Ollama, vLLM, LiteLLM) |
 | `llm.github.{base_url,model,token_env}` | `VEXVIPER_GITHUB_*` / `GITHUB_TOKEN` | GitHub Models / `openai/gpt-4.1-mini` | GitHub Models inference |
+| `llm.copilot.{command,model,args,in_repo,timeout}` | `VEXVIPER_COPILOT_*` | `copilot`, 180s | Copilot CLI non-interactive mode |
 | `llm.mcp.{transport,command,args,url,tool}` | `VEXVIPER_MCP_*` | stdio / `assess_vulnerability` | the MCP server + tool VEXViper calls |
 | `repo.{cache_dir,override,clone,govulncheck}` | `VEXVIPER_REPO_*` | `.vexviper-cache`, clone+govulncheck on | product repo handling |
 | `repo.sboms[]{match,repo}` | — | | per-SBOM repository pins (glob match, `{version}` placeholder) |
@@ -151,6 +153,13 @@ agent can see which SBOMs still need a pin.
   with `permissions: models: read`). Usage is billed to your GitHub / Copilot plan — this is
   the supported way to use a Copilot subscription programmatically. See
   [Copilot / GitHub Models](docs/INTEGRATION.md#7-using-a-github-copilot-subscription-as-llm-source).
+* **copilot** — runs the **GitHub Copilot CLI** non-interactively
+  (`copilot -p <prompt> -s --no-ask-user --deny-tool=shell,write,edit [--model …]`) and parses
+  the JSON answer. Uses your Copilot subscription with **no API key**: log in once with
+  `copilot` → `/login`, or `gh auth login`, or export `GH_TOKEN=$(gh auth token)`. With
+  `in_repo: true` Copilot runs inside the cloned product repo and may *read* code (never write).
+  ~15 s per finding; verified on kubelb 1.4.2 (`not_affected` 0.88 with govulncheck evidence,
+  `affected` 0.95 with call path to `idna.ToASCII`).
 * **mcptool** — VEXViper connects as MCP client (stdio `command`/`args` or streamable HTTP
   `url`) and calls `tool` with
 

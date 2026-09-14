@@ -12,6 +12,8 @@ llm:
   # heuristic : deterministic rules only, no network, no key (default; safe baseline)
   # openai    : any OpenAI-compatible /chat/completions endpoint
   # github    : GitHub Models — billed to your GitHub / Copilot account, auth with a GitHub token
+  # copilot   : GitHub Copilot CLI in non-interactive mode (`copilot -p … -s`); uses your Copilot
+  #             subscription, no API key: auth via `copilot` → /login, `gh auth login`, or GH_TOKEN
   # mcptool   : call a tool on an MCP server you run (VEXViper acts as MCP client)
   provider: heuristic
   # Assessments below this confidence are downgraded to under_investigation.
@@ -32,6 +34,13 @@ llm:
     token_env: GITHUB_TOKEN                 # fine-grained PAT with `models: read`, or Actions GITHUB_TOKEN with `models: read` permission
     timeout: 120s
     temperature: 0
+
+  copilot:
+    command: copilot                        # Copilot CLI binary
+    # model: gpt-5                          # --model; empty = CLI default
+    args: []                                # extra CLI args (e.g. ["--agent", "vex-triage"])
+    in_repo: false                          # run inside the cloned product repo so Copilot may read code
+    timeout: 180s
 
   mcp:
     transport: stdio                          # stdio | http

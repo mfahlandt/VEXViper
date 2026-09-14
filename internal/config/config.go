@@ -23,6 +23,9 @@ const (
 	ProviderHeuristic = "heuristic"
 	ProviderOpenAI    = "openai"
 	ProviderMCPTool   = "mcptool"
+	// ProviderCopilot drives the GitHub Copilot CLI in non-interactive mode
+	// (`copilot -p … -s`), using the user's Copilot subscription.
+	ProviderCopilot = "copilot"
 	// ProviderGitHub uses GitHub Models (OpenAI-compatible inference endpoint
 	// billed to a GitHub / Copilot account, authenticated with a GitHub token).
 	ProviderGitHub = "github"
@@ -65,10 +68,23 @@ type LLM struct {
 	// MinConfidence below which an assessment is downgraded to under_investigation.
 	MinConfidence float64 `yaml:"min_confidence"`
 	// AllowUnsupportedNotAffected lets an LLM emit not_affected without deterministic evidence.
-	AllowUnsupportedNotAffected bool   `yaml:"allow_unsupported_not_affected"`
-	OpenAI                      OpenAI `yaml:"openai"`
-	GitHub                      GitHub `yaml:"github"`
-	MCP                         MCP    `yaml:"mcp"`
+	AllowUnsupportedNotAffected bool    `yaml:"allow_unsupported_not_affected"`
+	OpenAI                      OpenAI  `yaml:"openai"`
+	GitHub                      GitHub  `yaml:"github"`
+	Copilot                     Copilot `yaml:"copilot"`
+	MCP                         MCP     `yaml:"mcp"`
+}
+
+// Copilot configures the GitHub Copilot CLI provider. Authentication is the
+// CLI's own (`copilot` → /login, `gh auth login`, COPILOT_GITHUB_TOKEN).
+type Copilot struct {
+	Command string        `yaml:"command"`
+	Model   string        `yaml:"model"`
+	Args    []string      `yaml:"args"`
+	Timeout time.Duration `yaml:"timeout"`
+	// InRepo runs the CLI inside the cloned product repository so the model
+	// may read source files (tools shell/write/edit stay denied).
+	InRepo bool `yaml:"in_repo"`
 }
 
 // OpenAI configures any OpenAI-compatible chat completions endpoint
@@ -195,7 +211,8 @@ func Default() Config {
 				TokenEnv: "GITHUB_TOKEN",
 				Timeout:  120 * time.Second,
 			},
-			MCP: MCP{Transport: MCPTransportStdio, Tool: "assess_vulnerability", Timeout: 120 * time.Second},
+			Copilot: Copilot{Command: "copilot", Timeout: 180 * time.Second},
+			MCP:     MCP{Transport: MCPTransportStdio, Tool: "assess_vulnerability", Timeout: 120 * time.Second},
 		},
 		Repo:    Repo{CacheDir: ".vexviper-cache", Clone: true, Govulncheck: true},
 		VEX:     VEX{Author: "VEXViper", AuthorRole: "automated triage (LLM-assisted)", Namespace: "https://vexviper.dev/docs", OutDir: "."},
@@ -264,6 +281,10 @@ func (c *Config) ApplyEnv(lookup func(string) (string, bool)) {
 	str("GITHUB_MODEL", &c.LLM.GitHub.Model)
 	str("GITHUB_TOKEN", &c.LLM.GitHub.Token)
 	dur("GITHUB_TIMEOUT", &c.LLM.GitHub.Timeout)
+	str("COPILOT_COMMAND", &c.LLM.Copilot.Command)
+	str("COPILOT_MODEL", &c.LLM.Copilot.Model)
+	dur("COPILOT_TIMEOUT", &c.LLM.Copilot.Timeout)
+	boolean("COPILOT_IN_REPO", &c.LLM.Copilot.InRepo)
 	str("MCP_TRANSPORT", &c.LLM.MCP.Transport)
 	str("MCP_COMMAND", &c.LLM.MCP.Command)
 	if v, ok := lookup(EnvPrefix + "MCP_ARGS"); ok {
@@ -310,9 +331,9 @@ func (c *Config) ApplyEnv(lookup func(string) (string, bool)) {
 func (c *Config) Validate() error {
 	var errs []error
 	switch c.LLM.Provider {
-	case ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderMCPTool:
+	case ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderCopilot, ProviderMCPTool:
 	default:
-		errs = append(errs, fmt.Errorf("llm.provider %q must be one of %s, %s, %s, %s", c.LLM.Provider, ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderMCPTool))
+		errs = append(errs, fmt.Errorf("llm.provider %q must be one of %s, %s, %s, %s, %s", c.LLM.Provider, ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderCopilot, ProviderMCPTool))
 	}
 	if c.LLM.MinConfidence < 0 || c.LLM.MinConfidence > 1 {
 		errs = append(errs, fmt.Errorf("llm.min_confidence %v must be within [0,1]", c.LLM.MinConfidence))
@@ -336,6 +357,9 @@ func (c *Config) Validate() error {
 		if c.LLM.GitHub.Token == "" {
 			errs = append(errs, fmt.Errorf("llm.github.token is empty (set %s or llm.github.token_env)", nonEmpty(c.LLM.GitHub.TokenEnv, "VEXVIPER_GITHUB_TOKEN")))
 		}
+	}
+	if c.LLM.Provider == ProviderCopilot && c.LLM.Copilot.Command == "" {
+		errs = append(errs, errors.New("llm.copilot.command is required for provider copilot"))
 	}
 	if c.LLM.Provider == ProviderMCPTool {
 		switch c.LLM.MCP.Transport {

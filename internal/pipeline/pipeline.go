@@ -122,6 +122,8 @@ func NewProvider(cfg config.LLM, log *slog.Logger) (llm.Provider, error) {
 			gh.HTTP = &http.Client{Timeout: cfg.GitHub.Timeout}
 		}
 		primary = gh
+	case config.ProviderCopilot:
+		primary = &llm.CopilotCLI{Command: cfg.Copilot.Command, Model: cfg.Copilot.Model, Args: cfg.Copilot.Args, Timeout: cfg.Copilot.Timeout, InRepo: cfg.Copilot.InRepo}
 	case config.ProviderMCPTool:
 		switch cfg.MCP.Transport {
 		case config.MCPTransportStdio:
@@ -286,7 +288,7 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (*Outcome, error) {
 			return nil, err
 		}
 		rep := p.Evidence.Collect(ctx, f, repoDir, gvc)
-		req := llm.Request{ProductName: productName(res.Product), Report: rep}
+		req := llm.Request{ProductName: productName(res.Product), Report: rep, RepoDir: repoDir}
 		if repoDir != "" {
 			req.ProductRepo = how
 		}

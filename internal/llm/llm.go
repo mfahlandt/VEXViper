@@ -18,6 +18,9 @@ type Request struct {
 	ProductName string           `json:"product_name"`
 	ProductRepo string           `json:"product_repo,omitempty"`
 	Report      *evidence.Report `json:"report"`
+	// RepoDir is the local checkout of the product (if any); providers that
+	// can inspect code (CopilotCLI with InRepo) use it as working directory.
+	RepoDir string `json:"-"`
 }
 
 // Assessment is the provider's verdict. It intentionally mirrors OpenVEX

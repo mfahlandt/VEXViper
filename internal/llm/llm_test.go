@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -363,5 +365,55 @@ func TestOpenAIProviderNameGitHubModels(t *testing.T) {
 	}
 	if a.Provider != "github:openai/gpt-4.1-mini" || o.Name() != "github:openai/gpt-4.1-mini" {
 		t.Fatalf("provider = %q", a.Provider)
+	}
+}
+
+func TestCopilotCLI(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "copilot")
+	// Fake CLI: verifies flags, echoes an assessment; "--model fail" exits with the auth hint.
+	if err := os.WriteFile(script, []byte(`#!/bin/sh
+prompt=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p) prompt="$2"; shift;;
+    --model) model="$2"; shift;;
+    -s|--no-ask-user|--no-auto-update|--no-custom-instructions|--deny-tool=shell|--deny-tool=write|--deny-tool=edit) ;;
+    --extra) extra=1;;
+    *) echo "unexpected arg $1" >&2; exit 2;;
+  esac
+  shift
+done
+case "$prompt" in *"OpenVEX"*) ;; *) echo "system prompt missing" >&2; exit 2;; esac
+case "$prompt" in *"GO-2023-2102"*) ;; *) echo "finding missing" >&2; exit 2;; esac
+if [ "$model" = "fail" ]; then echo "To authenticate, run /login" >&2; exit 1; fi
+[ "$extra" = 1 ] || { echo "extra arg missing" >&2; exit 2; }
+pwd
+echo 'Here you go:'
+printf '%s\n' '`+"```"+`json'
+echo '{"status":"affected","confidence":0.7,"reasoning":"reachable","action_statement":"upgrade"}'
+printf '%s\n' '`+"```"+`'
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoDir := t.TempDir()
+	c := &CopilotCLI{Command: script, Model: "gpt-5", Args: []string{"--extra"}, InRepo: true}
+	a, err := c.Assess(context.Background(), Request{ProductName: "p", RepoDir: repoDir, Report: report(item(evidence.KindReachable, true))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Status != vex.StatusAffected || a.Provider != "copilot:gpt-5" || a.ActionStatement != "upgrade" {
+		t.Fatalf("assessment = %+v", a)
+	}
+
+	bad := &CopilotCLI{Command: script, Model: "fail", Args: []string{"--extra"}}
+	if _, err := bad.Assess(context.Background(), Request{Report: report()}); err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("expected auth error, got %v", err)
+	}
+	if _, err := c.Assess(context.Background(), Request{}); err == nil {
+		t.Fatal("nil report must error")
+	}
+	if (&CopilotCLI{}).Name() != "copilot" || (&CopilotCLI{}).command() != "copilot" {
+		t.Fatal("defaults")
 	}
 }
