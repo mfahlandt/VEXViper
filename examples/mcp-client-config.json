@@ -1,0 +1,12 @@
+{
+  "$comment": "Example MCP host configuration (Claude Desktop / VS Code style) running VEXViper as an MCP server over stdio.",
+  "mcpServers": {
+    "vexviper": {
+      "command": "vexviper",
+      "args": ["mcp-serve", "--config", "/etc/vexviper/vexviper.yaml"],
+      "env": {
+        "BOMHORT_API_KEY": "${BOMHORT_API_KEY}"
+      }
+    }
+  }
+}

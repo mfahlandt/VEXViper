@@ -1,0 +1,7 @@
+.git
+.idea
+.e2e
+.vexviper-cache
+bin
+dist
+*.test

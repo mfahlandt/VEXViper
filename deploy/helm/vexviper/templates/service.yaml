@@ -1,0 +1,14 @@
+{{- if eq .Values.mode "mcp" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vexviper.fullname" . }}
+  labels: {{- include "vexviper.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.mcp.service.type }}
+  selector: {{- include "vexviper.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: mcp
+      port: {{ .Values.mcp.port }}
+      targetPort: mcp
+{{- end }}

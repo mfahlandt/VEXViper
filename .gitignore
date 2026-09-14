@@ -1,0 +1,10 @@
+/bin/
+/dist/
+/.vexviper-cache/
+*.test
+*.out
+coverage.html
+.env
+.idea/workspace.xml
+/.e2e/
+bin/

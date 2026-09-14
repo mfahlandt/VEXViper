@@ -1,0 +1,58 @@
+# VEXViper configuration. Every key can be overridden with an environment
+# variable VEXVIPER_<SECTION>_<KEY> (e.g. VEXVIPER_BOMHORT_URL, VEXVIPER_LLM_PROVIDER).
+# Secrets should come from the *_env indirections rather than the file.
+
+bomhort:
+  url: http://localhost:8080
+  # api_key: ...              # or:
+  api_key_env: BOMHORT_API_KEY   # X-API-Key for /api/v1/sboms/upload (AUTH_ENABLED=true)
+  # service_token: ...        # alternatively the SERVICE_TOKEN (X-Service-Token)
+
+llm:
+  # heuristic : deterministic rules only, no network, no key (default; safe baseline)
+  # openai    : any OpenAI-compatible /chat/completions endpoint
+  # mcptool   : call a tool on an MCP server you run (VEXViper acts as MCP client)
+  provider: heuristic
+  # Assessments below this confidence are downgraded to under_investigation.
+  min_confidence: 0.6
+  # Let the LLM emit not_affected without deterministic evidence (govulncheck etc.). Dangerous.
+  allow_unsupported_not_affected: false
+
+  openai:
+    base_url: https://api.openai.com/v1      # Azure, GitHub Models, Ollama (http://localhost:11434/v1), vLLM, LiteLLM...
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+    timeout: 120s
+    temperature: 0
+
+  mcp:
+    transport: stdio                          # stdio | http
+    command: my-triage-mcp-server             # stdio: process to spawn
+    args: []
+    env: {}
+    url: http://localhost:3000/mcp            # http: streamable HTTP endpoint
+    headers: {}                               # e.g. Authorization: Bearer ...
+    tool: assess_vulnerability                # tool called with {system_prompt, prompt, request, schema}
+    timeout: 120s
+
+repo:
+  cache_dir: .vexviper-cache
+  # override: github.com/owner/name@v1.2.3   # force the product repository
+  clone: true                                 # clone the product repo for code-level evidence
+  govulncheck: true                           # run govulncheck when the product is a Go module
+
+vex:
+  author: VEXViper
+  author_role: automated triage (LLM-assisted)
+  # supplier: ACME Corp
+  namespace: https://vexviper.dev/docs        # IRI prefix for document/statement IDs
+  out_dir: ./vex
+  upload: false                               # push to BOMHort after generation
+  regenerate: false                           # also re-assess findings that already have a vex_status
+
+watch:
+  interval: 15m
+  state_file: .vexviper-cache/watch-state.json
+
+# Upper bound for one SBOM (clone + govulncheck + all assessments).
+timeout: 30m

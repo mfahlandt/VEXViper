@@ -1,0 +1,91 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://vex.example.com/docs/public/vex-af93b0a723ab926d43938eaca7f34829ae942e746893aa9f1c1d277adaf5575a-sbom-123",
+  "author": "ACME Security",
+  "role": "automated triage",
+  "version": 1,
+  "tooling": "vexviper/test",
+  "supplier": "ACME",
+  "statements": [
+    {
+      "@id": "https://vex.example.com/docs/statements/CVE-2026-0001/pkg_golang_github.com_foo_bar_v1.0.0",
+      "vulnerability": {
+        "name": "CVE-2026-0001",
+        "description": "summary of CVE-2026-0001"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/foo/bar@v1.0.0",
+          "identifiers": {
+            "purl": "pkg:golang/github.com/foo/bar@v1.0.0"
+          }
+        }
+      ],
+      "status": "affected",
+      "status_notes": "provider=openai:gpt confidence=0.9 evidence=govulncheck_reachable | reachable",
+      "action_statement": "Upgrade pkg to v0.17.0 or later.",
+      "action_statement_timestamp": "2026-09-14T12:00:00Z",
+      "timestamp": "2026-09-14T12:00:00Z"
+    },
+    {
+      "@id": "https://vex.example.com/docs/statements/CVE-2026-0002/pkg_golang_github.com_foo_baz_v1.0.0",
+      "vulnerability": {
+        "name": "CVE-2026-0002",
+        "description": "summary of CVE-2026-0002"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/foo/baz@v1.0.0",
+          "identifiers": {
+            "purl": "pkg:golang/github.com/foo/baz@v1.0.0"
+          }
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | unclear",
+      "timestamp": "2026-09-14T12:00:00Z"
+    },
+    {
+      "@id": "https://vex.example.com/docs/statements/GHSA-aaaa/pkg_npm__40angular_cdk_22.0.6",
+      "vulnerability": {
+        "name": "GHSA-aaaa",
+        "description": "summary of GHSA-aaaa"
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/%40angular/cdk@22.0.6",
+          "identifiers": {
+            "purl": "pkg:npm/%40angular/cdk@22.0.6"
+          }
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "provider=heuristic confidence=0.95 evidence=version_fixed | version ok",
+      "timestamp": "2026-09-14T12:00:00Z"
+    },
+    {
+      "@id": "https://vex.example.com/docs/statements/GO-2023-2102/pkg_golang_golang.org_x_net_v0.16.0",
+      "vulnerability": {
+        "name": "GO-2023-2102",
+        "description": "summary of GO-2023-2102",
+        "aliases": [
+          "CVE-2023-39325"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/net@v0.16.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/net@v0.16.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | no call path",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "not reachable",
+      "timestamp": "2026-09-14T12:00:00Z"
+    }
+  ],
+  "timestamp": "2026-09-14T12:00:00Z"
+}

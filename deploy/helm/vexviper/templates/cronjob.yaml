@@ -1,0 +1,37 @@
+{{- if eq .Values.mode "cronjob" }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "vexviper.fullname" . }}
+  labels: {{- include "vexviper.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: {{- include "vexviper.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          securityContext: {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: vexviper
+              image: {{ include "vexviper.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["watch", "--config", "/etc/vexviper/vexviper.yaml", "--once", "--log-json"]
+              env: {{- include "vexviper.env" . | nindent 16 }}
+              securityContext: {{- toYaml .Values.securityContext | nindent 16 }}
+              resources: {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts: {{- include "vexviper.volumeMounts" . | nindent 16 }}
+          volumes: {{- include "vexviper.volumes" . | nindent 12 }}
+{{- end }}

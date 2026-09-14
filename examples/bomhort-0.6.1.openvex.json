@@ -1,0 +1,206 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://vexviper.dev/docs/public/vex-3430964ca7bbce7136794f489caa3419b85df90ceff6c4ddc2dfa2cd6e43a5f9-14104a51-8b44-515e-8d7b-66cb949603b7",
+  "author": "VEXViper e2e",
+  "role": "automated triage (LLM-assisted)",
+  "version": 1,
+  "tooling": "vexviper/dev provider=heuristic",
+  "statements": [
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-hh8m-fm6v-7cvg/pkg_npm__40angular_compiler_22.0.8",
+      "vulnerability": {
+        "name": "GHSA-hh8m-fm6v-7cvg",
+        "description": "Angular: Sanitization bypass via directive host bindings on concrete host elements in @angular/core and @angular/compiler",
+        "aliases": [
+          "CVE-2026-88057"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/%40angular/compiler@22.0.8",
+          "identifiers": {
+            "purl": "pkg:npm/%40angular/compiler@22.0.8"
+          }
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-hh8m-fm6v-7cvg/pkg_npm__40angular_core_22.0.8",
+      "vulnerability": {
+        "name": "GHSA-hh8m-fm6v-7cvg",
+        "description": "Angular: Sanitization bypass via directive host bindings on concrete host elements in @angular/core and @angular/compiler",
+        "aliases": [
+          "CVE-2026-88057"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/%40angular/core@22.0.8",
+          "identifiers": {
+            "purl": "pkg:npm/%40angular/core@22.0.8"
+          }
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-p297-fm68-3q8c/pkg_npm__40angular_common_22.0.8",
+      "vulnerability": {
+        "name": "GHSA-p297-fm68-3q8c",
+        "description": "Angular: Information Leak via `HttpTransferCache` Bypass When Using `withRequestsMadeViaParent`",
+        "aliases": [
+          "CVE-2026-88059"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/%40angular/common@22.0.8",
+          "identifiers": {
+            "purl": "pkg:npm/%40angular/common@22.0.8"
+          }
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-5841/pkg_golang_github.com_klauspost_compress_v1.18.6",
+      "vulnerability": {
+        "name": "GO-2026-5841",
+        "description": "OOB read in github.com/klauspost/compress/s2"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/github.com/klauspost/compress@v1.18.6",
+          "identifiers": {
+            "purl": "pkg:golang/github.com/klauspost/compress@v1.18.6"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-5932/pkg_golang_golang.org_x_crypto_v0.53.0",
+      "vulnerability": {
+        "name": "GO-2026-5932",
+        "description": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@v0.53.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/crypto@v0.53.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-5970/pkg_golang_golang.org_x_text_v0.38.0",
+      "vulnerability": {
+        "name": "GO-2026-5970",
+        "description": "Infinite loop on invalid input in golang.org/x/text",
+        "aliases": [
+          "CVE-2026-56852"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/text@v0.38.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/text@v0.38.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-6303/pkg_golang_golang.org_x_crypto_v0.53.0",
+      "vulnerability": {
+        "name": "GO-2026-6303",
+        "description": "Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh",
+        "aliases": [
+          "CVE-2026-56854"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@v0.53.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/crypto@v0.53.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-6354/pkg_golang_golang.org_x_crypto_v0.53.0",
+      "vulnerability": {
+        "name": "GO-2026-6354",
+        "description": "Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh",
+        "aliases": [
+          "CVE-2026-78662"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@v0.53.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/crypto@v0.53.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-6355/pkg_golang_golang.org_x_crypto_v0.53.0",
+      "vulnerability": {
+        "name": "GO-2026-6355",
+        "description": "Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh",
+        "aliases": [
+          "CVE-2026-56855"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@v0.53.0",
+          "identifiers": {
+            "purl": "pkg:golang/golang.org/x/crypto@v0.53.0"
+          }
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
+      "timestamp": "2026-09-14T16:05:36.893185982Z"
+    }
+  ],
+  "timestamp": "2026-09-14T16:05:36Z"
+}

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: vexviper
+description: LLM-assisted OpenVEX generation sidecar for BOMHort
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/mfahlandt/VEXViper
+sources:
+  - https://github.com/mfahlandt/VEXViper
+  - https://github.com/seebom-labs/BOMHort
+keywords: [sbom, vex, openvex, bomhort, vulnerability]

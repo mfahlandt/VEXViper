@@ -1,0 +1,14 @@
+VEXViper {{ .Chart.AppVersion }} deployed in mode "{{ .Values.mode }}".
+
+BOMHort: {{ .Values.bomhort.url }}  upload: {{ .Values.upload }}
+{{- if eq .Values.mode "cronjob" }}
+Schedule: {{ .Values.schedule }} — trigger manually with:
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "vexviper.fullname" . }} vexviper-manual
+{{- else if eq .Values.mode "mcp" }}
+MCP endpoint (streamable HTTP): http://{{ include "vexviper.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.mcp.port }}
+{{- end }}
+{{- if not .Values.bomhort.existingSecret }}{{ if not .Values.bomhort.apiKey }}
+
+WARNING: no API key configured — uploads to BOMHort will fail with 401 when AUTH_ENABLED=true.
+Set bomhort.apiKey or bomhort.existingSecret (key "api-key").
+{{- end }}{{ end }}

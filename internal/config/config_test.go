@@ -1,0 +1,132 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestDefaultValidates(t *testing.T) {
+	cfg := Default()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config invalid: %v", err)
+	}
+	if cfg.LLM.Provider != ProviderHeuristic {
+		t.Fatalf("default provider = %q, want heuristic", cfg.LLM.Provider)
+	}
+}
+
+func TestLoadYAMLAndEnvPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vexviper.yaml")
+	yaml := `
+bomhort:
+  url: http://bomhort.internal:8080
+  api_key_env: MY_KEY
+llm:
+  provider: openai
+  min_confidence: 0.8
+  openai:
+    base_url: http://localhost:11434/v1
+    model: llama3
+vex:
+  author: ACME Security
+  upload: true
+watch:
+  interval: 5m
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MY_KEY", "secret-from-env")
+	t.Setenv("VEXVIPER_OPENAI_MODEL", "mistral")
+	t.Setenv("VEXVIPER_VEX_UPLOAD", "false")
+	t.Setenv("VEXVIPER_TIMEOUT", "1h")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BOMHort.URL != "http://bomhort.internal:8080" {
+		t.Errorf("url = %q", cfg.BOMHort.URL)
+	}
+	if cfg.BOMHort.APIKey != "secret-from-env" {
+		t.Errorf("api key indirection failed: %q", cfg.BOMHort.APIKey)
+	}
+	if cfg.LLM.OpenAI.Model != "mistral" {
+		t.Errorf("env should override yaml model, got %q", cfg.LLM.OpenAI.Model)
+	}
+	if cfg.LLM.OpenAI.BaseURL != "http://localhost:11434/v1" {
+		t.Errorf("base url = %q", cfg.LLM.OpenAI.BaseURL)
+	}
+	if cfg.VEX.Upload {
+		t.Error("env should override yaml upload=true")
+	}
+	if cfg.VEX.Author != "ACME Security" {
+		t.Errorf("author = %q", cfg.VEX.Author)
+	}
+	if cfg.Watch.Interval != 5*time.Minute {
+		t.Errorf("interval = %v", cfg.Watch.Interval)
+	}
+	if cfg.Timeout != time.Hour {
+		t.Errorf("timeout = %v", cfg.Timeout)
+	}
+}
+
+func TestLoadMissingFile(t *testing.T) {
+	if _, err := Load("/nonexistent/vexviper.yaml"); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestApplyEnvMCPArgs(t *testing.T) {
+	cfg := Default()
+	env := map[string]string{
+		"VEXVIPER_LLM_PROVIDER":   "mcptool",
+		"VEXVIPER_MCP_COMMAND":    "npx",
+		"VEXVIPER_MCP_ARGS":       "-y some-mcp-server --flag",
+		"VEXVIPER_MCP_TOOL":       "triage",
+		"VEXVIPER_REPO_CLONE":     "false",
+		"VEXVIPER_WATCH_INTERVAL": "bogus", // ignored
+	}
+	cfg.ApplyEnv(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	if cfg.LLM.Provider != ProviderMCPTool || cfg.LLM.MCP.Command != "npx" || cfg.LLM.MCP.Tool != "triage" {
+		t.Fatalf("mcp env not applied: %+v", cfg.LLM.MCP)
+	}
+	if got := strings.Join(cfg.LLM.MCP.Args, " "); got != "-y some-mcp-server --flag" {
+		t.Fatalf("args = %q", got)
+	}
+	if cfg.Repo.Clone {
+		t.Fatal("repo.clone should be false")
+	}
+	if cfg.Watch.Interval != 15*time.Minute {
+		t.Fatalf("invalid duration should be ignored, got %v", cfg.Watch.Interval)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestValidateErrors(t *testing.T) {
+	cases := map[string]func(*Config){
+		"bad provider":       func(c *Config) { c.LLM.Provider = "magic" },
+		"confidence range":   func(c *Config) { c.LLM.MinConfidence = 1.5 },
+		"openai needs model": func(c *Config) { c.LLM.Provider = ProviderOpenAI; c.LLM.OpenAI.Model = "" },
+		"mcp stdio command":  func(c *Config) { c.LLM.Provider = ProviderMCPTool },
+		"mcp http url":       func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Transport = MCPTransportHTTP },
+		"mcp bad transport":  func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Transport = "carrier-pigeon" },
+		"mcp tool":           func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Command = "x"; c.LLM.MCP.Tool = "" },
+		"watch interval":     func(c *Config) { c.Watch.Interval = 0 },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := Default()
+			mutate(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
