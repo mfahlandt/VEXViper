@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vexviper.fullname" . }}
+  labels: {{- include "vexviper.labels" . | nindent 4 }}
+data:
+  vexviper.yaml: |
+{{ toYaml .Values.config | indent 4 }}

@@ -1,0 +1,481 @@
+package pipeline
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/openvex/go-vex/pkg/vex"
+
+	"github.com/mfahlandt/vexviper/internal/bomhort"
+	"github.com/mfahlandt/vexviper/internal/config"
+	"github.com/mfahlandt/vexviper/internal/evidence"
+	"github.com/mfahlandt/vexviper/internal/llm"
+	"github.com/mfahlandt/vexviper/internal/repo"
+	"github.com/mfahlandt/vexviper/internal/source"
+)
+
+type fakeBOMHort struct {
+	sbom     bomhort.SBOM
+	vulns    []bomhort.Vulnerability
+	deps     []bomhort.DependencyNode
+	raw      []byte
+	uploads  []string
+	uploaded [][]byte
+	upErr    error
+	stmts    []bomhort.VEXStatement
+	stmtErr  error
+}
+
+func (f *fakeBOMHort) AllVEXStatements(context.Context) ([]bomhort.VEXStatement, error) {
+	return f.stmts, f.stmtErr
+}
+
+func (f *fakeBOMHort) FindSBOM(_ context.Context, ref string) (bomhort.SBOM, error) {
+	if ref != f.sbom.ID && ref != f.sbom.DocumentName {
+		return bomhort.SBOM{}, errors.New("not found")
+	}
+	return f.sbom, nil
+}
+func (f *fakeBOMHort) Vulnerabilities(context.Context, string) ([]bomhort.Vulnerability, error) {
+	return f.vulns, nil
+}
+func (f *fakeBOMHort) Dependencies(context.Context, string) ([]bomhort.DependencyNode, error) {
+	return f.deps, nil
+}
+func (f *fakeBOMHort) DownloadSBOM(context.Context, string) ([]byte, error) { return f.raw, nil }
+func (f *fakeBOMHort) UploadVEX(_ context.Context, name string, doc []byte) (bomhort.UploadResult, error) {
+	if f.upErr != nil {
+		return bomhort.UploadResult{}, f.upErr
+	}
+	f.uploads = append(f.uploads, name)
+	f.uploaded = append(f.uploaded, doc)
+	return bomhort.UploadResult{Status: "pending", JobID: "job-1", JobType: "vex"}, nil
+}
+
+type fakeCloner struct {
+	dir  string
+	locs []repo.Location
+	err  error
+}
+
+func (c *fakeCloner) Clone(_ context.Context, loc repo.Location) (string, error) {
+	c.locs = append(c.locs, loc)
+	return c.dir, c.err
+}
+
+func newTestPipeline(t *testing.T, bh *fakeBOMHort, prov llm.Provider, cl Cloner) *Pipeline {
+	t.Helper()
+	cfg := config.Default()
+	cfg.Repo.Clone = cl != nil
+	cfg.Repo.Govulncheck = false
+	return &Pipeline{
+		Cfg:      cfg,
+		BOMHort:  bh,
+		Provider: prov,
+		Cloner:   cl,
+		Evidence: &evidence.Collector{}, // no OSV → offline
+		Log:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	}
+}
+
+func bomhortFixture(t *testing.T) *fakeBOMHort {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bomhort-0.6.1.spdx.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &fakeBOMHort{
+		sbom: bomhort.SBOM{ID: "sbom-1", DocumentName: ".", SourceFile: "bomhort-0.6.1.spdx.json"},
+		vulns: []bomhort.Vulnerability{
+			{VulnID: "GO-2025-0001", PURL: "pkg:golang/golang.org/x/net@v0.30.0", Severity: "HIGH", FixedVersion: "v0.31.0"},
+			{VulnID: "GO-2025-0002", PURL: "pkg:golang/github.com/foo/bar@v1.2.3", Severity: "LOW"},
+			{VulnID: "GO-2025-0003", PURL: "pkg:golang/github.com/baz/qux@v2.0.0", Severity: "MEDIUM", VEXStatus: "not_affected"},
+		},
+		raw: raw,
+	}
+}
+
+func TestRunWritesDocumentAndUploads(t *testing.T) {
+	bh := bomhortFixture(t)
+	mock := &llm.Mock{
+		ByVulnID: map[string]llm.Assessment{
+			"GO-2025-0001": {Status: vex.StatusAffected, ActionStatement: "upgrade to v0.31.0", Confidence: 0.9, Reasoning: "outdated"},
+			"GO-2025-0002": {Status: vex.StatusNotAffected, Justification: vex.VulnerableCodeNotInExecutePath, Confidence: 0.95, Reasoning: "unsupported claim"},
+		},
+	}
+	cl := &fakeCloner{dir: t.TempDir()}
+	p := newTestPipeline(t, bh, mock, cl)
+
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1", OutDir: t.TempDir(), Upload: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Findings != 2 || out.Skipped != 1 {
+		t.Fatalf("findings=%d skipped=%d, want 2/1", out.Findings, out.Skipped)
+	}
+	if len(mock.Calls) != 2 {
+		t.Fatalf("provider called %d times", len(mock.Calls))
+	}
+	// Repo resolved from SBOM hints of the BOMHort SBOM.
+	if len(cl.locs) == 0 || cl.locs[0].URL != "https://github.com/seebom-labs/bomhort" || cl.locs[0].Ref != "v0.6.1" {
+		t.Fatalf("cloner locs = %+v", cl.locs)
+	}
+	if out.RepoDir != cl.dir {
+		t.Fatalf("RepoDir = %q", out.RepoDir)
+	}
+	if _, err := os.Stat(out.Path); err != nil {
+		t.Fatalf("output file missing: %v", err)
+	}
+	if out.Filename != "bomhort-0.6.1.vexviper.openvex.json" {
+		t.Fatalf("filename = %q", out.Filename)
+	}
+	if len(bh.uploads) != 1 || bh.uploads[0] != out.Filename {
+		t.Fatalf("uploads = %v", bh.uploads)
+	}
+	if out.Upload == nil || out.Upload.JobID != "job-1" {
+		t.Fatalf("upload result = %+v", out.Upload)
+	}
+
+	var doc vex.VEX
+	if err := json.Unmarshal(out.Document, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Statements) != 2 {
+		t.Fatalf("statements = %d", len(doc.Statements))
+	}
+	byVuln := map[string]vex.Statement{}
+	for _, s := range doc.Statements {
+		byVuln[string(s.Vulnerability.Name)] = s
+	}
+	if s := byVuln["GO-2025-0001"]; s.Status != vex.StatusAffected || s.Products[0].ID != "pkg:golang/golang.org/x/net@v0.30.0" {
+		t.Errorf("GO-2025-0001 = %+v", s)
+	}
+	// not_affected without strong evidence must be downgraded by the guardrail.
+	if s := byVuln["GO-2025-0002"]; s.Status != vex.StatusUnderInvestigation {
+		t.Errorf("GO-2025-0002 status = %s, want under_investigation (guardrail)", s.Status)
+	}
+	if len(out.Guardrails) != 1 {
+		t.Errorf("guardrails = %+v", out.Guardrails)
+	}
+}
+
+func TestRunRegenerateOnlyAndOverride(t *testing.T) {
+	bh := bomhortFixture(t)
+	mock := &llm.Mock{Default: &llm.Assessment{Status: vex.StatusUnderInvestigation, Confidence: 0.5}}
+	cl := &fakeCloner{dir: t.TempDir()}
+	p := newTestPipeline(t, bh, mock, cl)
+
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: ".", Regenerate: true, Only: []string{"go-2025-0003"}, RepoOverride: "acme/product"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Findings != 1 || out.Skipped != 2 {
+		t.Fatalf("findings=%d skipped=%d", out.Findings, out.Skipped)
+	}
+	if cl.locs[0].URL != "https://github.com/acme/product" || cl.locs[0].How != "flag" {
+		t.Fatalf("override not preferred: %+v", cl.locs[0])
+	}
+	if out.Path != "" {
+		t.Fatalf("no OutDir but Path=%q", out.Path)
+	}
+	if out.Counts[vex.StatusUnderInvestigation] != 1 {
+		t.Fatalf("counts = %v", out.Counts)
+	}
+}
+
+func TestRunCloneFailureDegrades(t *testing.T) {
+	bh := bomhortFixture(t)
+	cl := &fakeCloner{err: errors.New("git: boom")}
+	p := newTestPipeline(t, bh, llm.Heuristic{}, cl)
+
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.RepoDir != "" {
+		t.Fatalf("expected no repo dir, got %q", out.RepoDir)
+	}
+	if len(out.Assessments) != 2 {
+		t.Fatalf("assessments = %d", len(out.Assessments))
+	}
+	// heuristic without code evidence is conservative: everything stays under_investigation
+	for _, a := range out.Assessments {
+		if a.Status != vex.StatusUnderInvestigation {
+			t.Fatalf("%s status = %s", a.VulnID, a.Status)
+		}
+	}
+	if out.Counts[vex.StatusUnderInvestigation] != 2 {
+		t.Fatalf("counts = %v", out.Counts)
+	}
+}
+
+func TestRunNoCloner(t *testing.T) {
+	bh := bomhortFixture(t)
+	p := newTestPipeline(t, bh, llm.Heuristic{}, nil)
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.RepoDir != "" || out.RepoHow != "https://github.com/seebom-labs/bomhort" {
+		t.Fatalf("RepoDir=%q RepoHow=%q", out.RepoDir, out.RepoHow)
+	}
+}
+
+func TestRunProviderErrorIsSurvivable(t *testing.T) {
+	bh := bomhortFixture(t)
+	p := newTestPipeline(t, bh, &llm.Mock{Err: errors.New("llm down")}, nil)
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range out.Assessments {
+		if a.Status != vex.StatusUnderInvestigation {
+			t.Fatalf("%s status = %s", a.VulnID, a.Status)
+		}
+	}
+}
+
+func TestRunUploadErrorReturnsOutcome(t *testing.T) {
+	bh := bomhortFixture(t)
+	bh.upErr = errors.New("401")
+	p := newTestPipeline(t, bh, llm.Heuristic{}, nil)
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1", Upload: true})
+	if err == nil || out == nil || len(out.Document) == 0 {
+		t.Fatalf("err=%v out=%v", err, out)
+	}
+}
+
+func TestRunUnknownSBOM(t *testing.T) {
+	p := newTestPipeline(t, bomhortFixture(t), llm.Heuristic{}, nil)
+	if _, err := p.Run(context.Background(), RunOptions{SBOMRef: "nope"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestFilename(t *testing.T) {
+	cases := []struct {
+		p    source.Product
+		want string
+	}{
+		{source.Product{SourceFile: "dir/bomhort-0.6.1.spdx.json"}, "bomhort-0.6.1.vexviper.openvex.json"},
+		{source.Product{DocumentName: "my app/v1"}, "my-app-v1.vexviper.openvex.json"},
+		{source.Product{SBOMID: "abc"}, "abc.vexviper.openvex.json"},
+		{source.Product{DocumentName: "."}, "vex.vexviper.openvex.json"},
+		{source.Product{SourceFile: "x.cdx.json"}, "x.vexviper.openvex.json"},
+	}
+	for _, c := range cases {
+		if got := Filename(c.p); got != c.want {
+			t.Errorf("Filename(%+v) = %q, want %q", c.p, got, c.want)
+		}
+	}
+}
+
+func TestVersionFromName(t *testing.T) {
+	cases := map[string]string{
+		"bomhort-0.6.1.spdx.json":                       "v0.6.1",
+		"kubermatic_kubelb_1.4.2.spdx.json":             "v1.4.2",
+		"dir/agones_1_57_0_spdx.json":                   "",
+		"app-v2.0.0-rc.1.cdx.json":                      "v2.0.0-rc.1",
+		"github.com/seebom-labs/bomhort/backend":        "",
+		"other.spdx.json":                               "",
+		"kubermatic_developer-platform_0.9.0.spdx.json": "v0.9.0",
+	}
+	for in, want := range cases {
+		if got := VersionFromName(in); got != want {
+			t.Errorf("VersionFromName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := VersionFromName("", "x-1.2.3"); got != "v1.2.3" {
+		t.Errorf("second name: %q", got)
+	}
+}
+
+func TestNewProvider(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	cases := []struct {
+		cfg     config.LLM
+		wantErr bool
+		name    string
+	}{
+		{config.LLM{Provider: config.ProviderHeuristic}, false, "heuristic"},
+		{config.LLM{Provider: config.ProviderOpenAI, OpenAI: config.OpenAI{Model: "m"}}, false, "openai:m+heuristic"},
+		{config.LLM{Provider: config.ProviderGitHub, GitHub: config.GitHub{BaseURL: "http://x", Model: "openai/gpt-4.1", Token: "ghp"}}, false, "github:openai/gpt-4.1+heuristic"},
+		{config.LLM{Provider: config.ProviderCopilot, Copilot: config.Copilot{Command: "copilot", Model: "gpt-5"}}, false, "copilot:gpt-5+heuristic"},
+		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportStdio, Tool: "t"}}, false, "mcptool:t+heuristic"},
+		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportHTTP, Tool: "t"}}, false, "mcptool:t+heuristic"},
+		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: "carrier-pigeon"}}, true, ""},
+		{config.LLM{Provider: "nope"}, true, ""},
+	}
+	for _, c := range cases {
+		p, err := NewProvider(c.cfg, log)
+		if (err != nil) != c.wantErr {
+			t.Fatalf("%+v: err=%v", c.cfg, err)
+		}
+		if err == nil && p.Name() != c.name {
+			t.Errorf("name = %q want %q", p.Name(), c.name)
+		}
+	}
+}
+
+func TestNewFromConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.Repo.CacheDir = t.TempDir()
+	p, err := New(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Cloner == nil || p.Evidence == nil || p.Provider == nil {
+		t.Fatalf("pipeline not fully wired: %+v", p)
+	}
+	cfg.Repo.Clone = false
+	p, _ = New(cfg, nil)
+	if p.Cloner != nil {
+		t.Fatal("cloner should be nil when clone disabled")
+	}
+}
+
+func TestMaterializeRepoPrecedence(t *testing.T) {
+	prod := source.Product{SBOMID: "sbom-1", DocumentName: "kubelb", SourceFile: "kubelb-1.4.2.spdx.json",
+		RepoHints: []string{"https://github.com/hint/from-sbom"}}
+	mk := func(cfgRepo config.Repo) (*Pipeline, *fakeCloner) {
+		cl := &fakeCloner{dir: t.TempDir()}
+		cfg := config.Default()
+		cfg.Repo = cfgRepo
+		cfg.Repo.Clone = true
+		return &Pipeline{Cfg: cfg, Cloner: cl, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, cl
+	}
+
+	t.Run("config sboms beats sbom hints and derives ref", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "kubelb-*", Repo: "kubermatic/kubelb"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		loc := cl.locs[0]
+		if loc.URL != "https://github.com/kubermatic/kubelb" || loc.Ref != "v1.4.2" || loc.How != "config-sbom" {
+			t.Fatalf("got %+v", loc)
+		}
+	})
+	t.Run("version placeholder", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "sbom-1", Repo: "https://gitlab.com/a/b@release-{version}"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].Ref != "release-v1.4.2" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("flag beats config", func(t *testing.T) {
+		p, cl := mk(config.Repo{Override: "glob/al", SBOMs: []config.SBOMRepo{{Match: "*", Repo: "per/sbom"}}})
+		p.MaterializeRepo(context.Background(), prod, "flag/wins@v9")
+		if cl.locs[0].URL != "https://github.com/flag/wins" || cl.locs[0].How != "flag" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("global override beats per-sbom", func(t *testing.T) {
+		p, cl := mk(config.Repo{Override: "glob/al", SBOMs: []config.SBOMRepo{{Match: "*", Repo: "per/sbom"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].URL != "https://github.com/glob/al" || cl.locs[0].How != "config" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("no match falls back to sbom hint", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "other-*", Repo: "x/y"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].URL != "https://github.com/hint/from-sbom" || cl.locs[0].How != "sbom" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+}
+
+func TestRunReassessAfter(t *testing.T) {
+	old := time.Now().Add(-10 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	fresh := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	mk := func() (*fakeBOMHort, *llm.Mock) {
+		bh := bomhortFixture(t)
+		bh.vulns = []bomhort.Vulnerability{
+			{VulnID: "V-OLD-UI", PURL: "pkg:golang/a/b@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-OLD-NA", PURL: "pkg:golang/a/c@v1", VEXStatus: "not_affected"},
+			{VulnID: "V-FRESH-UI", PURL: "pkg:golang/a/d@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-OLD-AFF", PURL: "pkg:golang/a/e@v1", VEXStatus: "affected"},
+			{VulnID: "V-NOSTMT", PURL: "pkg:golang/a/f@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-NEW", PURL: "pkg:golang/a/g@v1"},
+		}
+		bh.stmts = []bomhort.VEXStatement{
+			{VulnID: "V-OLD-UI", ProductPURL: "pkg:golang/a/b@v1", Status: "under_investigation", VEXTimestamp: old},
+			{VulnID: "V-OLD-UI", ProductPURL: "pkg:golang/a/b@v1", Status: "under_investigation", VEXTimestamp: "2020-01-01 00:00:00"},
+			{VulnID: "V-OLD-NA", ProductPURL: "pkg:golang/a/c@v1", Status: "not_affected", VEXTimestamp: old},
+			{VulnID: "V-FRESH-UI", ProductPURL: "pkg:golang/a/d@v1", Status: "under_investigation", VEXTimestamp: fresh},
+			{VulnID: "V-OLD-AFF", ProductPURL: "pkg:golang/a/e@v1", Status: "affected", IngestedAt: old},
+		}
+		return bh, &llm.Mock{Default: &llm.Assessment{Status: vex.StatusUnderInvestigation, Confidence: 0.5}}
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		bh, mock := mk()
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: "."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Findings != 1 || out.Reassessed != 0 || out.Skipped != 5 {
+			t.Fatalf("findings=%d reassessed=%d skipped=%d", out.Findings, out.Reassessed, out.Skipped)
+		}
+	})
+	t.Run("7d ttl", func(t *testing.T) {
+		bh, mock := mk()
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: ".", ReassessAfter: 7 * 24 * time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// V-NEW + V-OLD-UI + V-OLD-AFF; not_affected, fresh and unknown-statement ones stay skipped.
+		if out.Findings != 3 || out.Reassessed != 2 || out.Skipped != 3 {
+			t.Fatalf("findings=%d reassessed=%d skipped=%d", out.Findings, out.Reassessed, out.Skipped)
+		}
+		got := map[string]bool{}
+		for _, c := range mock.Calls {
+			got[c.Report.Finding.VulnID] = true
+		}
+		if !got["V-NEW"] || !got["V-OLD-UI"] || !got["V-OLD-AFF"] || got["V-OLD-NA"] || got["V-FRESH-UI"] || got["V-NOSTMT"] {
+			t.Fatalf("assessed = %v", got)
+		}
+	})
+	t.Run("statement listing error keeps statuses", func(t *testing.T) {
+		bh, mock := mk()
+		bh.stmtErr = errors.New("boom")
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: ".", ReassessAfter: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Findings != 1 || out.Reassessed != 0 {
+			t.Fatalf("findings=%d reassessed=%d", out.Findings, out.Reassessed)
+		}
+	})
+}
+
+func TestFindGoBin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GOROOT", "")
+	for _, v := range []string{"go1.24.1", "go1.25.10", "go1.9.0"} {
+		dir := filepath.Join(home, "sdk", v, "bin")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Highest semver wins (not lexical: go1.9.0 < go1.25.10); GOROOT beats all.
+	if got := findGoBin(); got != filepath.Join(home, "sdk", "go1.25.10", "bin") {
+		t.Fatalf("findGoBin = %q", got)
+	}
+	root := filepath.Join(home, "root")
+	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "bin", "go"), []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("GOROOT", root)
+	if got := findGoBin(); got != filepath.Join(root, "bin") {
+		t.Fatalf("GOROOT not preferred: %q", got)
+	}
+}

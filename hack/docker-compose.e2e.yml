@@ -1,0 +1,91 @@
+# Isolated BOMHort stack for VEXViper end-to-end tests.
+#
+#   BOMHORT_SRC=/path/to/bomhort docker compose -p vexviper-e2e -f hack/docker-compose.e2e.yml up -d
+#
+# Uses the images built by BOMHort's own docker-compose (docker compose build
+# in $BOMHORT_SRC) or the ones published at ghcr.io/seebom-labs/seebom/*.
+# Differences from BOMHort's dev stack: auth enabled with a known API key,
+# a writable SBOM dir (upload endpoint needs SBOM_DIR/pushed), high ports.
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.12
+    ports:
+      - "${E2E_CH_PORT:-18123}:8123"
+    volumes:
+      - ${BOMHORT_SRC}/db/init/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - ${BOMHORT_SRC}/db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    environment:
+      CLICKHOUSE_DB: bomhort
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api-gateway:
+    image: ${BOMHORT_IMAGE_PREFIX:-seebom-}api-gateway:${BOMHORT_IMAGE_TAG:-latest}
+    ports:
+      - "${E2E_API_PORT:-18080}:8080"
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DATABASE: bomhort
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      API_PORT: "8080"
+      SBOM_DIR: /data/sboms
+      EXCEPTIONS_FILE: /data/config/license-exceptions.json
+      LICENSE_POLICY_FILE: /data/config/license-policy.json
+      AUTH_ENABLED: "true"
+      API_KEYS: ${E2E_API_KEY:-vexviper-e2e-key}
+      SERVICE_TOKEN: ${E2E_SERVICE_TOKEN:-vexviper-e2e-service-token}
+      MAX_UPLOAD_SIZE_MB: "50"
+    volumes:
+      - ${E2E_SBOM_DIR}:/data/sboms
+      - ${BOMHORT_SRC}/sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
+      - ${BOMHORT_SRC}/sboms/license-policy.json:/data/config/license-policy.json:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  ingestion-watcher:
+    image: ${BOMHORT_IMAGE_PREFIX:-seebom-}ingestion-watcher:${BOMHORT_IMAGE_TAG:-latest}
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DATABASE: bomhort
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      SBOM_DIR: /data/sboms
+      SBOM_LIMIT: "0"
+    volumes:
+      - ${E2E_SBOM_DIR}:/data/sboms:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  parsing-worker:
+    image: ${BOMHORT_IMAGE_PREFIX:-seebom-}parsing-worker:${BOMHORT_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DATABASE: bomhort
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      SBOM_DIR: /data/sboms
+      WORKER_BATCH_SIZE: "50"
+      SKIP_OSV: "false"
+      SKIP_GITHUB_RESOLVE: "true"
+      SKIP_NPM_RESOLVE: "true"
+      EXCEPTIONS_FILE: /data/config/license-exceptions.json
+      LICENSE_POLICY_FILE: /data/config/license-policy.json
+    volumes:
+      - ${E2E_SBOM_DIR}:/data/sboms:ro
+      - ${BOMHORT_SRC}/sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
+      - ${BOMHORT_SRC}/sboms/license-policy.json:/data/config/license-policy.json:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy

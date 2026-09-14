@@ -1,0 +1,83 @@
+image:
+  repository: ghcr.io/mfahlandt/vexviper
+  tag: ""            # defaults to appVersion
+  pullPolicy: IfNotPresent
+
+# Runtime mode:
+#   cronjob    – `vexviper watch --once --upload` on a schedule (recommended)
+#   deployment – long-running `vexviper watch` loop
+#   mcp        – `vexviper mcp-serve --transport http` behind a Service (for LLM hosts/agents)
+mode: cronjob
+schedule: "0 */6 * * *"
+
+bomhort:
+  url: http://bomhort-api-gateway:8080
+  # Secret with keys `api-key` (X-API-Key) and optionally `openai-api-key` / `github-token`.
+  existingSecret: ""
+  apiKey: ""         # used to create a Secret when existingSecret is empty
+
+upload: true
+
+# Rendered to /etc/vexviper/vexviper.yaml (bomhort.url and secrets are injected via env).
+config:
+  llm:
+    provider: heuristic
+    min_confidence: 0.6
+    openai:
+      base_url: https://api.openai.com/v1
+      model: gpt-4o-mini
+      api_key_env: OPENAI_API_KEY
+    github:
+      model: openai/gpt-4.1-mini
+      token_env: GITHUB_TOKEN
+    mcp:
+      transport: http
+      url: http://triage-mcp:3000/mcp
+      tool: assess_vulnerability
+  repo:
+    clone: true
+    govulncheck: true
+    # Pin repositories for SBOMs without usable VCS metadata:
+    sboms: []
+    #  - match: "kubelb-*"
+    #    repo: kubermatic/kubelb
+  vex:
+    author: VEXViper
+    author_role: automated triage (LLM-assisted)
+    namespace: https://vexviper.dev/docs
+  watch:
+    interval: 15m
+    reassess_after: 168h
+  timeout: 30m
+
+extraEnv: []
+#  - name: GITHUB_TOKEN
+#    valueFrom: { secretKeyRef: { name: gh, key: token } }
+
+# Persist the repo cache / watch state between runs (recommended for cronjob & deployment).
+persistence:
+  enabled: false
+  size: 10Gi
+  storageClass: ""
+  existingClaim: ""
+
+mcp:
+  port: 8765
+  service:
+    type: ClusterIP
+
+resources:
+  requests: { cpu: 500m, memory: 1Gi }
+  limits: { cpu: "2", memory: 4Gi }
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: { drop: [ALL] }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
