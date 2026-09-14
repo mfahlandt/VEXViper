@@ -64,8 +64,14 @@ func fakeServer(t *testing.T, apiKey string) (*httptest.Server, *atomic.Int32) {
 		w.Header().Set("Content-Disposition", "attachment")
 		_, _ = io.WriteString(w, `{"spdxVersion":"SPDX-2.3"}`)
 	}))
-	mux.HandleFunc("GET /api/v1/vex/statements", auth(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(Paginated[VEXStatement]{Total: 1, Data: []VEXStatement{{VulnID: "GHSA-xyz", ProductPURL: "pkg:golang/golang.org/x/net@v0.17.0", Status: "not_affected"}}})
+	mux.HandleFunc("GET /api/v1/vex/statements", auth(func(w http.ResponseWriter, r *http.Request) {
+		// Two statements across two pages regardless of page_size, to exercise AllVEXStatements.
+		switch r.URL.Query().Get("page") {
+		case "", "1":
+			_ = json.NewEncoder(w).Encode(Paginated[VEXStatement]{Total: 2, Page: 1, Data: []VEXStatement{{VulnID: "GHSA-xyz", ProductPURL: "pkg:golang/golang.org/x/net@v0.17.0", Status: "not_affected"}}})
+		default:
+			_ = json.NewEncoder(w).Encode(Paginated[VEXStatement]{Total: 2, Page: 2, Data: []VEXStatement{{VulnID: "GHSA-abc", ProductPURL: "pkg:npm/x@1", Status: "affected"}}})
+		}
 	}))
 	mux.HandleFunc("POST /api/v1/sboms/upload", auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Filename") == "" {
@@ -116,8 +122,12 @@ func TestClientHappyPath(t *testing.T) {
 		t.Fatalf("DownloadSBOM = %s, %v", raw, err)
 	}
 	st, err := c.VEXStatements(ctx, 1, 50)
-	if err != nil || st.Total != 1 {
+	if err != nil || st.Total != 2 || len(st.Data) != 1 {
 		t.Fatalf("VEXStatements = %+v, %v", st, err)
+	}
+	allSt, err := c.AllVEXStatements(ctx)
+	if err != nil || len(allSt) != 2 || allSt[1].VulnID != "GHSA-abc" {
+		t.Fatalf("AllVEXStatements = %+v, %v", allSt, err)
 	}
 	res, err := c.UploadVEX(ctx, "bomhort.openvex.json", []byte(`{"@context":"https://openvex.dev/ns/v0.2.0"}`))
 	if err != nil || res.Status != "pending" || res.JobType != "vex" {

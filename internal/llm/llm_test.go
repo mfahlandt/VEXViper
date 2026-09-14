@@ -345,3 +345,23 @@ func TestMockAndFallback(t *testing.T) {
 		t.Fatalf("joined error = %v", err)
 	}
 }
+
+func TestOpenAIProviderNameGitHubModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/inference/chat/completions" || r.Header.Get("Authorization") != "Bearer ghp_x" || r.Header.Get("X-GitHub-Api-Version") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"status\":\"under_investigation\",\"confidence\":0.5,\"reasoning\":\"x\"}"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+	o := &OpenAI{BaseURL: srv.URL + "/inference", Model: "openai/gpt-4.1-mini", APIKey: "ghp_x", ProviderName: "github",
+		ExtraHeaders: map[string]string{"X-GitHub-Api-Version": "2022-11-28"}}
+	a, err := o.Assess(context.Background(), Request{ProductName: "p", Report: report()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Provider != "github:openai/gpt-4.1-mini" || o.Name() != "github:openai/gpt-4.1-mini" {
+		t.Fatalf("provider = %q", a.Provider)
+	}
+}

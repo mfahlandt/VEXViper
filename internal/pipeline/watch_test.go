@@ -63,6 +63,30 @@ func TestWatchOnceAndState(t *testing.T) {
 	if len(mock.Calls) != 4 {
 		t.Fatalf("changed sbom not re-processed: calls=%d", len(mock.Calls))
 	}
+
+	// ReassessAfter: unchanged fingerprint but last run is older than the TTL → re-run.
+	st, _ = LoadWatchState(stateFile)
+	if st.ProcessedAt["sbom-1"].IsZero() {
+		t.Fatalf("ProcessedAt not recorded: %+v", st)
+	}
+	st.ProcessedAt["sbom-1"] = time.Now().Add(-48 * time.Hour)
+	if err := st.Save(stateFile); err != nil {
+		t.Fatal(err)
+	}
+	opts.ReassessAfter = 24 * time.Hour
+	if err := p.Watch(context.Background(), lister, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(mock.Calls) != 6 {
+		t.Fatalf("due sbom not re-processed: calls=%d", len(mock.Calls))
+	}
+	// Immediately again: not due anymore.
+	if err := p.Watch(context.Background(), lister, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(mock.Calls) != 6 {
+		t.Fatalf("re-processed sbom that was not due: calls=%d", len(mock.Calls))
+	}
 }
 
 func TestWatchLoopStopsOnCancel(t *testing.T) {

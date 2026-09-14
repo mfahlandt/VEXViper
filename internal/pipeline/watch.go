@@ -23,12 +23,14 @@ type SBOMLister interface {
 type WatchState struct {
 	// Processed maps sbom_id → fingerprint (vuln_count@ingested_at).
 	Processed map[string]string `json:"processed"`
-	LastRun   time.Time         `json:"last_run"`
+	// ProcessedAt maps sbom_id → time of the last successful run.
+	ProcessedAt map[string]time.Time `json:"processed_at,omitempty"`
+	LastRun     time.Time            `json:"last_run"`
 }
 
 // LoadWatchState reads the state file; a missing file yields an empty state.
 func LoadWatchState(path string) (*WatchState, error) {
-	st := &WatchState{Processed: map[string]string{}}
+	st := &WatchState{Processed: map[string]string{}, ProcessedAt: map[string]time.Time{}}
 	if path == "" {
 		return st, nil
 	}
@@ -44,6 +46,9 @@ func LoadWatchState(path string) (*WatchState, error) {
 	}
 	if st.Processed == nil {
 		st.Processed = map[string]string{}
+	}
+	if st.ProcessedAt == nil {
+		st.ProcessedAt = map[string]time.Time{}
 	}
 	return st, nil
 }
@@ -81,6 +86,10 @@ type WatchOptions struct {
 	Once bool
 	// SkipZero ignores SBOMs without vulnerabilities.
 	SkipZero bool
+	// ReassessAfter re-runs an SBOM even with an unchanged fingerprint once
+	// this much time passed since its last run, and lets Run revisit
+	// under_investigation/affected findings whose statements are that old.
+	ReassessAfter time.Duration
 }
 
 // Watch polls BOMHort and runs the pipeline for every SBOM that is new or
@@ -136,15 +145,17 @@ func (p *Pipeline) watchPass(ctx context.Context, lister SBOMLister, state *Watc
 	var errs []error
 	for _, s := range sboms {
 		fp := fingerprint(s)
-		if state.Processed[s.ID] == fp {
+		due := opts.ReassessAfter > 0 && time.Since(state.ProcessedAt[s.ID]) >= opts.ReassessAfter
+		if state.Processed[s.ID] == fp && !due {
 			continue
 		}
 		if opts.SkipZero && s.VulnCount == 0 {
 			state.Processed[s.ID] = fp
+			state.ProcessedAt[s.ID] = time.Now().UTC()
 			continue
 		}
-		log.Info("processing sbom", "sbom", s.ID, "name", s.DocumentName, "vulns", s.VulnCount)
-		out, err := p.Run(ctx, RunOptions{SBOMRef: s.ID, OutDir: opts.OutDir, Upload: opts.Upload})
+		log.Info("processing sbom", "sbom", s.ID, "name", s.DocumentName, "vulns", s.VulnCount, "changed", state.Processed[s.ID] != fp, "reassess", due)
+		out, err := p.Run(ctx, RunOptions{SBOMRef: s.ID, OutDir: opts.OutDir, Upload: opts.Upload, ReassessAfter: opts.ReassessAfter})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("sbom %s: %w", s.ID, err))
 			if ctx.Err() != nil {
@@ -154,7 +165,8 @@ func (p *Pipeline) watchPass(ctx context.Context, lister SBOMLister, state *Watc
 		}
 		processed++
 		state.Processed[s.ID] = fp
-		log.Info("sbom processed", "sbom", s.ID, "findings", out.Findings, "skipped", out.Skipped, "counts", out.Counts)
+		state.ProcessedAt[s.ID] = time.Now().UTC()
+		log.Info("sbom processed", "sbom", s.ID, "findings", out.Findings, "reassessed", out.Reassessed, "skipped", out.Skipped, "counts", out.Counts)
 	}
 	return processed, errors.Join(errs...)
 }

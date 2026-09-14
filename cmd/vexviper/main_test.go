@@ -95,7 +95,7 @@ func TestGenerateCommand(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	code = run([]string{"generate", "--config", cfg, "--sbom", sbomID, "--out", "-", "--log-level", "error"}, &stdout, &stderr)
-	if code != 0 || !strings.Contains(stderr.String(), "findings assessed: 0 (skipped: 2)") {
+	if code != 0 || !strings.Contains(stderr.String(), "findings assessed: 0 (skipped: 2, re-assessed: 0)") {
 		t.Fatalf("exit %d\n%s", code, stderr.String())
 	}
 }

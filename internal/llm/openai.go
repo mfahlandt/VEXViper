@@ -24,10 +24,18 @@ type OpenAI struct {
 	StructuredOutput bool
 	// ExtraHeaders are added to every request (e.g. Azure api-key).
 	ExtraHeaders map[string]string
+	// Name overrides the provider name prefix reported in VEX tooling metadata
+	// (default "openai"), e.g. "github" for GitHub Models.
+	ProviderName string
 }
 
 // Name implements Provider.
-func (o *OpenAI) Name() string { return "openai:" + o.Model }
+func (o *OpenAI) Name() string {
+	if o.ProviderName != "" {
+		return o.ProviderName + ":" + o.Model
+	}
+	return "openai:" + o.Model
+}
 
 type chatRequest struct {
 	Model          string        `json:"model"`

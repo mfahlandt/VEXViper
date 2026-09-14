@@ -12,7 +12,7 @@ schedule: "0 */6 * * *"
 
 bomhort:
   url: http://bomhort-api-gateway:8080
-  # Secret with keys `api-key` (X-API-Key) and optionally `openai-api-key`.
+  # Secret with keys `api-key` (X-API-Key) and optionally `openai-api-key` / `github-token`.
   existingSecret: ""
   apiKey: ""         # used to create a Secret when existingSecret is empty
 
@@ -27,6 +27,9 @@ config:
       base_url: https://api.openai.com/v1
       model: gpt-4o-mini
       api_key_env: OPENAI_API_KEY
+    github:
+      model: openai/gpt-4.1-mini
+      token_env: GITHUB_TOKEN
     mcp:
       transport: http
       url: http://triage-mcp:3000/mcp
@@ -44,6 +47,7 @@ config:
     namespace: https://vexviper.dev/docs
   watch:
     interval: 15m
+    reassess_after: 168h
   timeout: 30m
 
 extraEnv: []

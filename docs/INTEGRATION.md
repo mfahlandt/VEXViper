@@ -91,9 +91,10 @@ Secrets: one Secret with `api-key` (BOMHort) and optionally `openai-api-key`.
 >
 > Proposals:
 > 1. Add a `docs/integrations/vexviper` page (I can open the PR).
-> 2. Return `vex_justification` and `vex_status_notes` alongside `vex_status` in
->    `/api/v1/sboms/{id}/vulnerabilities` so overlays (#255) and reviewers can see *why*
->    a statement was applied.
+> 2. Return `vex_justification`, `vex_status_notes` and `vex_updated_at` alongside
+>    `vex_status` in `/api/v1/sboms/{id}/vulnerabilities` so overlays (#255) and reviewers
+>    can see *why* and *when* a statement was applied (and re-triage tools can age them
+>    without paging `/api/v1/vex/statements`).
 > 3. Make the ingestion result observable: an endpoint (or a field on the upload response)
 >    that reports whether a pushed `*.openvex.json` was applied and to how many findings —
 >    today clients must poll `/api/v1/vex/statements`.
@@ -101,7 +102,48 @@ Secrets: one Secret with `api-key` (BOMHort) and optionally `openai-api-key`.
 >    "companion OpenVEX" export planned in #255 so generated and hand-written statements can
 >    be distinguished.
 
-## 6. Known limitations
+## 6. Re-running VEX generation over time
+
+BOMHort periodically refreshes its OSV database and recomputes findings, but it has no
+scheduler or hook for *re-triage* — an applied statement stays until a newer one for the
+same `(vuln_id, purl)` is ingested. VEXViper therefore owns the re-run policy
+(`watch.reassess_after`, see README "Re-running over time"): fingerprint changes trigger
+assessment of new findings; a TTL re-opens `under_investigation`/`affected` verdicts using
+`vex_timestamp` from `/api/v1/vex/statements`. Because BOMHort resolves conflicts by newest
+timestamp, re-uploads are idempotent. An upstream `vex_updated_at` on the vulnerabilities
+endpoint would remove the need to page through all statements (proposal 2/3 above).
+
+## 7. Using a GitHub Copilot subscription as LLM source
+
+| Route | Programmatic? | Status |
+|---|---|---|
+| **GitHub Models** (`provider: github`) — `https://models.github.ai/inference`, OpenAI-compatible, auth `Bearer <GitHub token>`, header `X-GitHub-Api-Version` | yes (CI, CronJob) | **supported**; billed to the GitHub/Copilot plan; models like `openai/gpt-4.1`, `openai/o4-mini`, `meta/llama-…`. Token: fine-grained PAT with `models: read` or Actions `GITHUB_TOKEN` with `permissions: models: read`. |
+| **Copilot as MCP host** — VS Code Copilot Chat / Copilot CLI / Copilot coding agent calls `vexviper mcp-serve` tools (`list_findings` → `get_repo_context` → model reasons → `draft_vex` → `upload_vex`) | interactive / agentic | supported today; the Copilot model does the assessment inside the host, human in the loop. |
+| Copilot Chat internal API (`api.githubcopilot.com` via token exchange) | — | **not implemented**: undocumented, ToS restricts to Copilot clients, breaks without notice. |
+
+GitHub Actions example:
+
+```yaml
+permissions: { contents: read, models: read }
+steps:
+  - run: vexviper generate --provider github --sbom ${{ github.event.repository.name }}-${{ github.ref_name }} --upload
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BOMHORT_API_KEY: ${{ secrets.BOMHORT_API_KEY }}
+      VEXVIPER_BOMHORT_URL: https://bomhort.example.com
+```
+
+## 8. Should the BOMHort Go client be its own module?
+
+Yes, eventually — `internal/bomhort` is already stdlib-only, VEXViper-agnostic and ships a
+fake server (`bomhorttest`), so it can be extracted mechanically as e.g.
+`github.com/seebom-labs/bomhort-go`. It is kept in-tree for now because (a) the API is not
+frozen before BOMHort 1.0 and a separate module would double every field change into a
+two-repo release, and (b) the right owner is the `seebom-labs` org (official client, matches
+their stdlib-only policy), which is a maintainer decision. Until then the package boundary is
+kept clean so `git filter-repo --path internal/bomhort` yields the library with history.
+
+## 9. Known limitations
 
 * Repository resolution depends on SBOM quality: syft `dir:` SBOMs of Go repos resolve
   (VCS ref / main module); `pkg:generic/<name>@<ver>` roots without VCS refs need `--repo`

@@ -21,8 +21,8 @@ BOMHort findings ──► resolve product repo ──► clone + govulncheck + 
    installed vs fixed version, direct/transitive depth, `govulncheck` reachability for Go
    products, symbol references, OSV details;
 3. asks an assessment provider for `status/justification/confidence/reasoning` per finding —
-   a rules-only **heuristic** (default, offline), any **OpenAI-compatible** endpoint, or a
-   tool on a **configurable MCP server**;
+   a rules-only **heuristic** (default, offline), any **OpenAI-compatible** endpoint,
+   **GitHub Models** (your GitHub/Copilot account), or a tool on a **configurable MCP server**;
 4. applies guardrails and emits an OpenVEX document built with
    [`openvex/go-vex`](https://github.com/openvex/go-vex) whose every statement passes
    `Statement.Validate()` and reuses BOMHort's `(vuln_id, purl)` verbatim so BOMHort's
@@ -94,6 +94,20 @@ bin/vexviper mcp-serve --transport http --addr 127.0.0.1:8765       # streamable
 Output filename: `<sbom-name>.vexviper.openvex.json`. Findings that already carry a
 `vex_status` are skipped unless `--regenerate`. `--only CVE-…,GHSA-…` restricts the run.
 
+### Re-running over time
+
+BOMHort refreshes OSV data but has no notion of "re-triage"; VEXViper owns that:
+
+* **new findings** — `watch` re-runs an SBOM when its `vuln_count@ingested_at` fingerprint
+  changes; only findings without a `vex_status` are assessed;
+* **expiring verdicts** — `watch.reassess_after: 168h` (or `--reassess-after 168h`) re-runs
+  each SBOM at least that often and re-assesses `under_investigation` / `affected`
+  findings whose newest BOMHort statement is older than the TTL (new evidence: fixed
+  versions, govulncheck DB updates, better model). `not_affected` / `fixed` are stable
+  claims and are only revisited with `--regenerate`;
+* a new statement for the same `(vuln_id, purl)` supersedes the old one in BOMHort (latest
+  `vex_timestamp` wins), so re-runs are idempotent.
+
 Docker: `docker build -t vexviper . && docker run --rm -v $PWD/work:/work -e VEXVIPER_BOMHORT_URL=http://host:8080 vexviper generate --sbom …`
 (the image ships git + Go toolchain + govulncheck).
 
@@ -106,14 +120,15 @@ every key overridable by `VEXVIPER_<SECTION>_<KEY>` and secrets via `*_env` indi
 |---|---|---|---|
 | `bomhort.url` | `VEXVIPER_BOMHORT_URL` | `http://localhost:8080` | BOMHort API gateway |
 | `bomhort.api_key_env` | `BOMHORT_API_KEY` | | X-API-Key for uploads |
-| `llm.provider` | `VEXVIPER_LLM_PROVIDER` | `heuristic` | `heuristic` \| `openai` \| `mcptool` |
+| `llm.provider` | `VEXVIPER_LLM_PROVIDER` | `heuristic` | `heuristic` \| `openai` \| `github` \| `mcptool` |
 | `llm.min_confidence` | `VEXVIPER_LLM_MIN_CONFIDENCE` | `0.6` | below → `under_investigation` |
 | `llm.openai.{base_url,model,api_key_env}` | `VEXVIPER_OPENAI_*` | OpenAI / `gpt-4o-mini` | any OpenAI-compatible endpoint (Azure, GitHub Models, Ollama, vLLM, LiteLLM) |
+| `llm.github.{base_url,model,token_env}` | `VEXVIPER_GITHUB_*` / `GITHUB_TOKEN` | GitHub Models / `openai/gpt-4.1-mini` | GitHub Models inference |
 | `llm.mcp.{transport,command,args,url,tool}` | `VEXVIPER_MCP_*` | stdio / `assess_vulnerability` | the MCP server + tool VEXViper calls |
 | `repo.{cache_dir,override,clone,govulncheck}` | `VEXVIPER_REPO_*` | `.vexviper-cache`, clone+govulncheck on | product repo handling |
 | `repo.sboms[]{match,repo}` | — | | per-SBOM repository pins (glob match, `{version}` placeholder) |
 | `vex.{author,author_role,supplier,namespace,out_dir,upload,regenerate}` | `VEXVIPER_VEX_*` | `VEXViper`, `automated triage (LLM-assisted)` | document metadata & output |
-| `watch.{interval,state_file}` | `VEXVIPER_WATCH_*` | `15m` | poller |
+| `watch.{interval,state_file,reassess_after}` | `VEXVIPER_WATCH_*` | `15m`, TTL off | poller & periodic re-assessment |
 | `timeout` | `VEXVIPER_TIMEOUT` | `30m` | per SBOM |
 
 ### Where does the product repository come from?
@@ -131,6 +146,11 @@ agent can see which SBOMs still need a pin.
 * **openai** — `POST {base_url}/chat/completions` with JSON-schema structured output,
   `temperature 0`. System prompt in [`internal/llm/prompt.go`](internal/llm/prompt.go)
   frames a *conservative* analyst and forbids inventing evidence.
+* **github** — GitHub Models (`https://models.github.ai/inference`, OpenAI dialect) with a
+  GitHub token (`GITHUB_TOKEN`; fine-grained PAT with `models: read`, or the Actions token
+  with `permissions: models: read`). Usage is billed to your GitHub / Copilot plan — this is
+  the supported way to use a Copilot subscription programmatically. See
+  [Copilot / GitHub Models](docs/INTEGRATION.md#7-using-a-github-copilot-subscription-as-llm-source).
 * **mcptool** — VEXViper connects as MCP client (stdio `command`/`args` or streamable HTTP
   `url`) and calls `tool` with
 

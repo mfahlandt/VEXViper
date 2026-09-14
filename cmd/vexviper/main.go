@@ -100,7 +100,7 @@ func (c *commonFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug|info|warn|error")
 	fs.BoolVar(&c.logJSON, "log-json", false, "emit JSON logs")
 	fs.StringVar(&c.bomhort, "bomhort", "", "BOMHort base URL (overrides config)")
-	fs.StringVar(&c.provider, "provider", "", "assessment provider: heuristic|openai|mcptool (overrides config)")
+	fs.StringVar(&c.provider, "provider", "", "assessment provider: heuristic|openai|github|mcptool (overrides config)")
 }
 
 func (c *commonFlags) load(stderr io.Writer) (config.Config, *slog.Logger, error) {
@@ -147,6 +147,7 @@ func cmdGenerate(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	regenerate := fs.Bool("regenerate", false, "also assess findings that already carry a vex_status")
 	only := fs.String("only", "", "comma-separated vuln IDs to restrict to")
 	wait := fs.Duration("wait", 0, "after --upload, wait up to this long for BOMHort to ingest the document")
+	reassess := fs.Duration("reassess-after", -1, "re-assess under_investigation/affected findings whose statement is older than this (default from config watch.reassess_after; 0 disables)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -170,14 +171,18 @@ func cmdGenerate(ctx context.Context, args []string, stdout, stderr io.Writer) e
 		outDir = ""
 	}
 	opts := pipeline.RunOptions{
-		SBOMRef:      *sbom,
-		RepoOverride: *repoURL,
-		OutDir:       outDir,
-		Upload:       *upload || cfg.VEX.Upload,
-		Regenerate:   *regenerate || cfg.VEX.Regenerate,
+		SBOMRef:       *sbom,
+		RepoOverride:  *repoURL,
+		ReassessAfter: cfg.Watch.ReassessAfter,
+		OutDir:        outDir,
+		Upload:        *upload || cfg.VEX.Upload,
+		Regenerate:    *regenerate || cfg.VEX.Regenerate,
 	}
 	if *only != "" {
 		opts.Only = strings.Split(*only, ",")
+	}
+	if *reassess >= 0 {
+		opts.ReassessAfter = *reassess
 	}
 	res, err := p.Run(ctx, opts)
 	if err != nil {
@@ -210,7 +215,7 @@ func cmdGenerate(ctx context.Context, args []string, stdout, stderr io.Writer) e
 
 func printSummary(w io.Writer, res *pipeline.Outcome) {
 	fmt.Fprintf(w, "\nVEXViper summary for SBOM %s (%s)\n", res.Product.SBOMID, res.Product.DocumentName)
-	fmt.Fprintf(w, "  findings assessed: %d (skipped: %d)\n", res.Findings, res.Skipped)
+	fmt.Fprintf(w, "  findings assessed: %d (skipped: %d, re-assessed: %d)\n", res.Findings, res.Skipped, res.Reassessed)
 	if res.RepoHow != "" {
 		fmt.Fprintf(w, "  product repo:      %s", res.RepoHow)
 		if res.RepoDir != "" {
@@ -243,6 +248,7 @@ func cmdWatch(ctx context.Context, args []string, stderr io.Writer) error {
 	upload := fs.Bool("upload", false, "upload generated documents to BOMHort")
 	once := fs.Bool("once", false, "run a single pass and exit (for CronJobs)")
 	skipZero := fs.Bool("skip-zero", true, "ignore SBOMs without vulnerabilities")
+	reassess := fs.Duration("reassess-after", -1, "re-run SBOMs and re-assess under_investigation/affected findings older than this (default from config watch.reassess_after; 0 disables)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -255,12 +261,16 @@ func cmdWatch(ctx context.Context, args []string, stderr io.Writer) error {
 		return err
 	}
 	opts := pipeline.WatchOptions{
-		Interval:  cfg.Watch.Interval,
-		StateFile: cfg.Watch.StateFile,
-		OutDir:    cfg.VEX.OutDir,
-		Upload:    *upload || cfg.VEX.Upload,
-		Once:      *once,
-		SkipZero:  *skipZero,
+		Interval:      cfg.Watch.Interval,
+		StateFile:     cfg.Watch.StateFile,
+		OutDir:        cfg.VEX.OutDir,
+		Upload:        *upload || cfg.VEX.Upload,
+		Once:          *once,
+		SkipZero:      *skipZero,
+		ReassessAfter: cfg.Watch.ReassessAfter,
+	}
+	if *reassess >= 0 {
+		opts.ReassessAfter = *reassess
 	}
 	if *interval > 0 {
 		opts.Interval = *interval

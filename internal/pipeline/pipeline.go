@@ -36,6 +36,12 @@ type BOMHortAPI interface {
 	UploadVEX(ctx context.Context, filename string, doc []byte) (bomhort.UploadResult, error)
 }
 
+// StatementLister is implemented by BOMHort clients that can enumerate the
+// ingested VEX statements; it enables RunOptions.ReassessAfter.
+type StatementLister interface {
+	AllVEXStatements(ctx context.Context) ([]bomhort.VEXStatement, error)
+}
+
 // Cloner materializes repositories (repo.Cloner or a fake).
 type Cloner interface {
 	Clone(ctx context.Context, loc repo.Location) (string, error)
@@ -98,6 +104,14 @@ func NewProvider(cfg config.LLM, log *slog.Logger) (llm.Provider, error) {
 		if cfg.OpenAI.Timeout > 0 {
 			primary.(*llm.OpenAI).HTTP = &http.Client{Timeout: cfg.OpenAI.Timeout}
 		}
+	case config.ProviderGitHub:
+		// GitHub Models speaks the OpenAI chat completions dialect.
+		gh := &llm.OpenAI{BaseURL: cfg.GitHub.BaseURL, Model: cfg.GitHub.Model, APIKey: cfg.GitHub.Token, Temperature: cfg.GitHub.Temperature, StructuredOutput: true,
+			ProviderName: config.ProviderGitHub, ExtraHeaders: map[string]string{"X-GitHub-Api-Version": config.GitHubModelsAPIVersion}}
+		if cfg.GitHub.Timeout > 0 {
+			gh.HTTP = &http.Client{Timeout: cfg.GitHub.Timeout}
+		}
+		primary = gh
 	case config.ProviderMCPTool:
 		switch cfg.MCP.Transport {
 		case config.MCPTransportStdio:
@@ -138,16 +152,23 @@ type RunOptions struct {
 	Regenerate bool
 	// Only restricts to specific vuln IDs (empty = all).
 	Only []string
+	// ReassessAfter re-includes findings whose current VEX status is
+	// under_investigation or affected when BOMHort's newest statement for
+	// them is older than this duration (0 = never). not_affected and fixed
+	// verdicts are only revisited with Regenerate.
+	ReassessAfter time.Duration
 }
 
 // Outcome summarizes a run.
 type Outcome struct {
-	SBOM        bomhort.SBOM
-	Product     source.Product
-	RepoDir     string
-	RepoHow     string
-	Findings    int
-	Skipped     int
+	SBOM     bomhort.SBOM
+	Product  source.Product
+	RepoDir  string
+	RepoHow  string
+	Findings int
+	Skipped  int
+	// Reassessed counts findings included because their statement expired.
+	Reassessed  int
 	Document    []byte
 	Filename    string
 	Path        string
@@ -187,11 +208,15 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (*Outcome, error) {
 	log.Info("loaded findings", "sbom", res.Product.SBOMID, "name", res.Product.DocumentName, "findings", len(res.Findings))
 
 	// Filter.
+	stale := p.staleStatements(ctx, res.Findings, opts.ReassessAfter, log)
 	var findings []source.Finding
 	for _, f := range res.Findings {
 		if !opts.Regenerate && f.VEXStatus != "" {
-			out.Skipped++
-			continue
+			if !stale[statementKey(f.VulnID, f.PURL)] {
+				out.Skipped++
+				continue
+			}
+			out.Reassessed++
 		}
 		if len(opts.Only) > 0 && !contains(opts.Only, f.VulnID) {
 			out.Skipped++
@@ -420,6 +445,64 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func statementKey(vulnID, purl string) string { return vulnID + "\x00" + purl }
+
+// reassessable lists statuses that are worth revisiting automatically.
+var reassessable = map[string]bool{
+	string(vex.StatusUnderInvestigation): true,
+	string(vex.StatusAffected):           true,
+}
+
+// staleStatements returns the (vuln_id, purl) keys of findings whose newest
+// BOMHort statement is older than ttl and whose status is reassessable.
+func (p *Pipeline) staleStatements(ctx context.Context, findings []source.Finding, ttl time.Duration, log *slog.Logger) map[string]bool {
+	stale := map[string]bool{}
+	if ttl <= 0 {
+		return stale
+	}
+	lister, ok := p.BOMHort.(StatementLister)
+	if !ok {
+		log.Warn("reassess_after set but BOMHort client cannot list VEX statements")
+		return stale
+	}
+	stmts, err := lister.AllVEXStatements(ctx)
+	if err != nil {
+		log.Warn("reassess_after: listing VEX statements failed; keeping existing statuses", "err", err)
+		return stale
+	}
+	newest := map[string]time.Time{}
+	for _, s := range stmts {
+		ts := parseTime(s.VEXTimestamp)
+		if ts.IsZero() {
+			ts = parseTime(s.IngestedAt)
+		}
+		k := statementKey(s.VulnID, s.ProductPURL)
+		if ts.After(newest[k]) {
+			newest[k] = ts
+		}
+	}
+	cutoff := time.Now().Add(-ttl)
+	for _, f := range findings {
+		if !reassessable[f.VEXStatus] {
+			continue
+		}
+		ts, known := newest[statementKey(f.VulnID, f.PURL)]
+		if known && ts.Before(cutoff) {
+			stale[statementKey(f.VulnID, f.PURL)] = true
+		}
+	}
+	return stale
+}
+
+func parseTime(s string) time.Time {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // Wait polls BOMHort until statements from the uploaded document are

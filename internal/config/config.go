@@ -23,6 +23,14 @@ const (
 	ProviderHeuristic = "heuristic"
 	ProviderOpenAI    = "openai"
 	ProviderMCPTool   = "mcptool"
+	// ProviderGitHub uses GitHub Models (OpenAI-compatible inference endpoint
+	// billed to a GitHub / Copilot account, authenticated with a GitHub token).
+	ProviderGitHub = "github"
+
+	// GitHubModelsURL is the default GitHub Models inference endpoint.
+	GitHubModelsURL = "https://models.github.ai/inference"
+	// GitHubModelsAPIVersion is sent as X-GitHub-Api-Version.
+	GitHubModelsAPIVersion = "2022-11-28"
 )
 
 // MCP transports accepted in MCP.Transport.
@@ -59,6 +67,7 @@ type LLM struct {
 	// AllowUnsupportedNotAffected lets an LLM emit not_affected without deterministic evidence.
 	AllowUnsupportedNotAffected bool   `yaml:"allow_unsupported_not_affected"`
 	OpenAI                      OpenAI `yaml:"openai"`
+	GitHub                      GitHub `yaml:"github"`
 	MCP                         MCP    `yaml:"mcp"`
 }
 
@@ -72,6 +81,18 @@ type OpenAI struct {
 	Timeout   time.Duration `yaml:"timeout"`
 	// Temperature for the completion; 0 gives the most deterministic output.
 	Temperature float64 `yaml:"temperature"`
+}
+
+// GitHub configures the GitHub Models provider. The token needs the
+// `models:read` scope (fine-grained PAT) or is the GITHUB_TOKEN of a workflow
+// with `models: read` permission.
+type GitHub struct {
+	BaseURL     string        `yaml:"base_url"`
+	Model       string        `yaml:"model"`
+	Token       string        `yaml:"token"`
+	TokenEnv    string        `yaml:"token_env"`
+	Timeout     time.Duration `yaml:"timeout"`
+	Temperature float64       `yaml:"temperature"`
 }
 
 // MCP configures the MCP server VEXViper connects to as a client and the tool
@@ -150,6 +171,9 @@ type VEX struct {
 type Watch struct {
 	Interval  time.Duration `yaml:"interval"`
 	StateFile string        `yaml:"state_file"`
+	// ReassessAfter periodically revisits under_investigation/affected
+	// findings whose VEX statement is older than this (0 = disabled).
+	ReassessAfter time.Duration `yaml:"reassess_after"`
 }
 
 // Default returns the built-in defaults.
@@ -164,6 +188,12 @@ func Default() Config {
 				Model:     "gpt-4o-mini",
 				APIKeyEnv: "OPENAI_API_KEY",
 				Timeout:   120 * time.Second,
+			},
+			GitHub: GitHub{
+				BaseURL:  GitHubModelsURL,
+				Model:    "openai/gpt-4.1-mini",
+				TokenEnv: "GITHUB_TOKEN",
+				Timeout:  120 * time.Second,
 			},
 			MCP: MCP{Transport: MCPTransportStdio, Tool: "assess_vulnerability", Timeout: 120 * time.Second},
 		},
@@ -230,6 +260,10 @@ func (c *Config) ApplyEnv(lookup func(string) (string, bool)) {
 	str("OPENAI_MODEL", &c.LLM.OpenAI.Model)
 	str("OPENAI_API_KEY", &c.LLM.OpenAI.APIKey)
 	dur("OPENAI_TIMEOUT", &c.LLM.OpenAI.Timeout)
+	str("GITHUB_BASE_URL", &c.LLM.GitHub.BaseURL)
+	str("GITHUB_MODEL", &c.LLM.GitHub.Model)
+	str("GITHUB_TOKEN", &c.LLM.GitHub.Token)
+	dur("GITHUB_TIMEOUT", &c.LLM.GitHub.Timeout)
 	str("MCP_TRANSPORT", &c.LLM.MCP.Transport)
 	str("MCP_COMMAND", &c.LLM.MCP.Command)
 	if v, ok := lookup(EnvPrefix + "MCP_ARGS"); ok {
@@ -251,6 +285,7 @@ func (c *Config) ApplyEnv(lookup func(string) (string, bool)) {
 	boolean("VEX_REGENERATE", &c.VEX.Regenerate)
 	dur("WATCH_INTERVAL", &c.Watch.Interval)
 	str("WATCH_STATE_FILE", &c.Watch.StateFile)
+	dur("WATCH_REASSESS_AFTER", &c.Watch.ReassessAfter)
 	dur("TIMEOUT", &c.Timeout)
 
 	// Secret indirections: only fill when the direct value is empty.
@@ -264,15 +299,20 @@ func (c *Config) ApplyEnv(lookup func(string) (string, bool)) {
 			c.LLM.OpenAI.APIKey = v
 		}
 	}
+	if c.LLM.GitHub.Token == "" && c.LLM.GitHub.TokenEnv != "" {
+		if v, ok := lookup(c.LLM.GitHub.TokenEnv); ok {
+			c.LLM.GitHub.Token = v
+		}
+	}
 }
 
 // Validate checks internal consistency.
 func (c *Config) Validate() error {
 	var errs []error
 	switch c.LLM.Provider {
-	case ProviderHeuristic, ProviderOpenAI, ProviderMCPTool:
+	case ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderMCPTool:
 	default:
-		errs = append(errs, fmt.Errorf("llm.provider %q must be one of %s, %s, %s", c.LLM.Provider, ProviderHeuristic, ProviderOpenAI, ProviderMCPTool))
+		errs = append(errs, fmt.Errorf("llm.provider %q must be one of %s, %s, %s, %s", c.LLM.Provider, ProviderHeuristic, ProviderOpenAI, ProviderGitHub, ProviderMCPTool))
 	}
 	if c.LLM.MinConfidence < 0 || c.LLM.MinConfidence > 1 {
 		errs = append(errs, fmt.Errorf("llm.min_confidence %v must be within [0,1]", c.LLM.MinConfidence))
@@ -287,6 +327,14 @@ func (c *Config) Validate() error {
 	if c.LLM.Provider == ProviderOpenAI {
 		if c.LLM.OpenAI.BaseURL == "" || c.LLM.OpenAI.Model == "" {
 			errs = append(errs, errors.New("llm.openai.base_url and llm.openai.model are required for provider openai"))
+		}
+	}
+	if c.LLM.Provider == ProviderGitHub {
+		if c.LLM.GitHub.BaseURL == "" || c.LLM.GitHub.Model == "" {
+			errs = append(errs, errors.New("llm.github.base_url and llm.github.model are required for provider github"))
+		}
+		if c.LLM.GitHub.Token == "" {
+			errs = append(errs, fmt.Errorf("llm.github.token is empty (set %s or llm.github.token_env)", nonEmpty(c.LLM.GitHub.TokenEnv, "VEXVIPER_GITHUB_TOKEN")))
 		}
 	}
 	if c.LLM.Provider == ProviderMCPTool {
@@ -310,4 +358,11 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("watch.interval must be positive"))
 	}
 	return errors.Join(errs...)
+}
+
+func nonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

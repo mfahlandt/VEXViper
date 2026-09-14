@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/openvex/go-vex/pkg/vex"
 
@@ -28,6 +29,12 @@ type fakeBOMHort struct {
 	uploads  []string
 	uploaded [][]byte
 	upErr    error
+	stmts    []bomhort.VEXStatement
+	stmtErr  error
+}
+
+func (f *fakeBOMHort) AllVEXStatements(context.Context) ([]bomhort.VEXStatement, error) {
+	return f.stmts, f.stmtErr
 }
 
 func (f *fakeBOMHort) FindSBOM(_ context.Context, ref string) (bomhort.SBOM, error) {
@@ -299,6 +306,7 @@ func TestNewProvider(t *testing.T) {
 	}{
 		{config.LLM{Provider: config.ProviderHeuristic}, false, "heuristic"},
 		{config.LLM{Provider: config.ProviderOpenAI, OpenAI: config.OpenAI{Model: "m"}}, false, "openai:m+heuristic"},
+		{config.LLM{Provider: config.ProviderGitHub, GitHub: config.GitHub{BaseURL: "http://x", Model: "openai/gpt-4.1", Token: "ghp"}}, false, "github:openai/gpt-4.1+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportStdio, Tool: "t"}}, false, "mcptool:t+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: config.MCPTransportHTTP, Tool: "t"}}, false, "mcptool:t+heuristic"},
 		{config.LLM{Provider: config.ProviderMCPTool, MCP: config.MCP{Transport: "carrier-pigeon"}}, true, ""},
@@ -377,6 +385,70 @@ func TestMaterializeRepoPrecedence(t *testing.T) {
 		p.MaterializeRepo(context.Background(), prod, "")
 		if cl.locs[0].URL != "https://github.com/hint/from-sbom" || cl.locs[0].How != "sbom" {
 			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+}
+
+func TestRunReassessAfter(t *testing.T) {
+	old := time.Now().Add(-10 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	fresh := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	mk := func() (*fakeBOMHort, *llm.Mock) {
+		bh := bomhortFixture(t)
+		bh.vulns = []bomhort.Vulnerability{
+			{VulnID: "V-OLD-UI", PURL: "pkg:golang/a/b@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-OLD-NA", PURL: "pkg:golang/a/c@v1", VEXStatus: "not_affected"},
+			{VulnID: "V-FRESH-UI", PURL: "pkg:golang/a/d@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-OLD-AFF", PURL: "pkg:golang/a/e@v1", VEXStatus: "affected"},
+			{VulnID: "V-NOSTMT", PURL: "pkg:golang/a/f@v1", VEXStatus: "under_investigation"},
+			{VulnID: "V-NEW", PURL: "pkg:golang/a/g@v1"},
+		}
+		bh.stmts = []bomhort.VEXStatement{
+			{VulnID: "V-OLD-UI", ProductPURL: "pkg:golang/a/b@v1", Status: "under_investigation", VEXTimestamp: old},
+			{VulnID: "V-OLD-UI", ProductPURL: "pkg:golang/a/b@v1", Status: "under_investigation", VEXTimestamp: "2020-01-01 00:00:00"},
+			{VulnID: "V-OLD-NA", ProductPURL: "pkg:golang/a/c@v1", Status: "not_affected", VEXTimestamp: old},
+			{VulnID: "V-FRESH-UI", ProductPURL: "pkg:golang/a/d@v1", Status: "under_investigation", VEXTimestamp: fresh},
+			{VulnID: "V-OLD-AFF", ProductPURL: "pkg:golang/a/e@v1", Status: "affected", IngestedAt: old},
+		}
+		return bh, &llm.Mock{Default: &llm.Assessment{Status: vex.StatusUnderInvestigation, Confidence: 0.5}}
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		bh, mock := mk()
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: "."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Findings != 1 || out.Reassessed != 0 || out.Skipped != 5 {
+			t.Fatalf("findings=%d reassessed=%d skipped=%d", out.Findings, out.Reassessed, out.Skipped)
+		}
+	})
+	t.Run("7d ttl", func(t *testing.T) {
+		bh, mock := mk()
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: ".", ReassessAfter: 7 * 24 * time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// V-NEW + V-OLD-UI + V-OLD-AFF; not_affected, fresh and unknown-statement ones stay skipped.
+		if out.Findings != 3 || out.Reassessed != 2 || out.Skipped != 3 {
+			t.Fatalf("findings=%d reassessed=%d skipped=%d", out.Findings, out.Reassessed, out.Skipped)
+		}
+		got := map[string]bool{}
+		for _, c := range mock.Calls {
+			got[c.Report.Finding.VulnID] = true
+		}
+		if !got["V-NEW"] || !got["V-OLD-UI"] || !got["V-OLD-AFF"] || got["V-OLD-NA"] || got["V-FRESH-UI"] || got["V-NOSTMT"] {
+			t.Fatalf("assessed = %v", got)
+		}
+	})
+	t.Run("statement listing error keeps statuses", func(t *testing.T) {
+		bh, mock := mk()
+		bh.stmtErr = errors.New("boom")
+		out, err := newTestPipeline(t, bh, mock, nil).Run(context.Background(), RunOptions{SBOMRef: ".", ReassessAfter: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Findings != 1 || out.Reassessed != 0 {
+			t.Fatalf("findings=%d reassessed=%d", out.Findings, out.Reassessed)
 		}
 	})
 }

@@ -11,6 +11,7 @@ bomhort:
 llm:
   # heuristic : deterministic rules only, no network, no key (default; safe baseline)
   # openai    : any OpenAI-compatible /chat/completions endpoint
+  # github    : GitHub Models — billed to your GitHub / Copilot account, auth with a GitHub token
   # mcptool   : call a tool on an MCP server you run (VEXViper acts as MCP client)
   provider: heuristic
   # Assessments below this confidence are downgraded to under_investigation.
@@ -22,6 +23,13 @@ llm:
     base_url: https://api.openai.com/v1      # Azure, GitHub Models, Ollama (http://localhost:11434/v1), vLLM, LiteLLM...
     model: gpt-4o-mini
     api_key_env: OPENAI_API_KEY
+    timeout: 120s
+    temperature: 0
+
+  github:
+    base_url: https://models.github.ai/inference
+    model: openai/gpt-4.1-mini              # any id from https://github.com/marketplace/models
+    token_env: GITHUB_TOKEN                 # fine-grained PAT with `models: read`, or Actions GITHUB_TOKEN with `models: read` permission
     timeout: 120s
     temperature: 0
 
@@ -66,6 +74,12 @@ vex:
 watch:
   interval: 15m
   state_file: .vexviper-cache/watch-state.json
+  # Periodic re-assessment. BOMHort has no scheduler for VEX, so VEXViper owns it:
+  # SBOMs are re-run once their last run is older than this, and findings whose
+  # current status is under_investigation or affected get a fresh assessment when
+  # BOMHort's newest statement for them is older than this. not_affected / fixed
+  # verdicts are never revisited automatically (use --regenerate). 0 disables.
+  reassess_after: 168h   # 7 days
 
 # Upper bound for one SBOM (clone + govulncheck + all assessments).
 timeout: 30m

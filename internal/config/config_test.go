@@ -114,6 +114,8 @@ func TestValidateErrors(t *testing.T) {
 		"bad provider":       func(c *Config) { c.LLM.Provider = "magic" },
 		"confidence range":   func(c *Config) { c.LLM.MinConfidence = 1.5 },
 		"openai needs model": func(c *Config) { c.LLM.Provider = ProviderOpenAI; c.LLM.OpenAI.Model = "" },
+		"github needs token": func(c *Config) { c.LLM.Provider = ProviderGitHub },
+		"github needs model": func(c *Config) { c.LLM.Provider = ProviderGitHub; c.LLM.GitHub.Token = "t"; c.LLM.GitHub.Model = "" },
 		"mcp stdio command":  func(c *Config) { c.LLM.Provider = ProviderMCPTool },
 		"mcp http url":       func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Transport = MCPTransportHTTP },
 		"mcp bad transport":  func(c *Config) { c.LLM.Provider = ProviderMCPTool; c.LLM.MCP.Transport = "carrier-pigeon" },
@@ -169,5 +171,18 @@ func TestLoadRepoSBOMsAndValidate(t *testing.T) {
 	err = cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "repo.sboms[1]") || !strings.Contains(err.Error(), "repo.sboms[2]") {
 		t.Fatalf("expected validation errors, got %v", err)
+	}
+}
+
+func TestGitHubProviderEnv(t *testing.T) {
+	cfg := Default()
+	cfg.LLM.Provider = ProviderGitHub
+	env := map[string]string{"GITHUB_TOKEN": "ghp_abc", "VEXVIPER_GITHUB_MODEL": "openai/gpt-4.1"}
+	cfg.ApplyEnv(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	if cfg.LLM.GitHub.Token != "ghp_abc" || cfg.LLM.GitHub.Model != "openai/gpt-4.1" || cfg.LLM.GitHub.BaseURL != GitHubModelsURL {
+		t.Fatalf("github cfg = %+v", cfg.LLM.GitHub)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

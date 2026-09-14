@@ -45,6 +45,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
       name: {{ include "vexviper.secretName" . }}
       key: openai-api-key
       optional: true
+- name: GITHUB_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "vexviper.secretName" . }}
+      key: github-token
+      optional: true
 {{- with .Values.extraEnv }}
 {{ toYaml . }}
 {{- end }}

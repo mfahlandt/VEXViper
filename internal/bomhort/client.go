@@ -225,6 +225,21 @@ func (c *Client) VEXStatements(ctx context.Context, page, pageSize int) (Paginat
 	return out, err
 }
 
+// AllVEXStatements walks all pages of /api/v1/vex/statements.
+func (c *Client) AllVEXStatements(ctx context.Context) ([]VEXStatement, error) {
+	var all []VEXStatement
+	for page := 1; ; page++ {
+		p, err := c.VEXStatements(ctx, page, 100)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, p.Data...)
+		if len(p.Data) == 0 || uint64(len(all)) >= p.Total {
+			return all, nil
+		}
+	}
+}
+
 // UploadVEX pushes an OpenVEX document. filename must end in .openvex.json
 // (or .vex.json) so BOMHort classifies the job as VEX.
 func (c *Client) UploadVEX(ctx context.Context, filename string, doc []byte) (UploadResult, error) {
