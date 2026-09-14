@@ -12,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/openvex/go-vex/pkg/vex"
+	"golang.org/x/mod/semver"
 
 	"github.com/mfahlandt/vexviper/internal/bomhort"
 	"github.com/mfahlandt/vexviper/internal/config"
@@ -87,6 +89,14 @@ func New(cfg config.Config, log *slog.Logger) (*Pipeline, error) {
 		p.Evidence.Govulncheck = findGovulncheck()
 		if p.Evidence.Govulncheck == "" {
 			log.Warn("govulncheck not found in PATH or GOPATH/bin; reachability analysis disabled")
+		} else if _, err := exec.LookPath("go"); err != nil {
+			// govulncheck shells out to `go`; find a toolchain when PATH lacks one.
+			if goBin := findGoBin(); goBin != "" {
+				p.Evidence.GoBin = goBin
+				log.Info("go not in PATH; using toolchain for govulncheck", "dir", goBin)
+			} else {
+				log.Warn("govulncheck found but no `go` toolchain in PATH, GOROOT, ~/sdk or /usr/local/go; reachability analysis will fail")
+			}
 		}
 	}
 	return p, nil
@@ -136,6 +146,35 @@ func findGovulncheck() string {
 		}
 	}
 	return ""
+}
+
+// findGoBin locates a directory containing the `go` binary outside PATH:
+// $GOROOT/bin, the newest ~/sdk/go*/bin (golang.org/dl layout), /usr/local/go/bin.
+func findGoBin() string {
+	var dirs []string
+	if r := os.Getenv("GOROOT"); r != "" {
+		dirs = append(dirs, filepath.Join(r, "bin"))
+	}
+	if home := os.Getenv("HOME"); home != "" {
+		sdks, _ := filepath.Glob(filepath.Join(home, "sdk", "go*", "bin", "go"))
+		sort.Slice(sdks, func(i, j int) bool { return semver.Compare(sdkVersion(sdks[i]), sdkVersion(sdks[j])) > 0 })
+		for _, g := range sdks {
+			dirs = append(dirs, filepath.Dir(g))
+		}
+	}
+	dirs = append(dirs, "/usr/local/go/bin", "/usr/lib/go/bin", "/usr/lib/golang/bin")
+	for _, d := range dirs {
+		if info, err := os.Stat(filepath.Join(d, "go")); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return d
+		}
+	}
+	return ""
+}
+
+// sdkVersion turns ~/sdk/go1.25.10/bin/go into "v1.25.10" for semver.Compare.
+func sdkVersion(goPath string) string {
+	name := filepath.Base(filepath.Dir(filepath.Dir(goPath)))
+	return "v" + strings.TrimPrefix(name, "go")
 }
 
 // RunOptions tunes a single run.

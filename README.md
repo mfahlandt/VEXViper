@@ -194,6 +194,37 @@ Host config example: [examples/mcp-client-config.json](examples/mcp-client-confi
 Typical agent flow: `list_findings` → `get_repo_context` → the host model reasons →
 `draft_vex` → human review → `upload_vex` → `list_vex_statements`.
 
+## Testing locally
+
+```sh
+make lint test                                     # unit tests, fake BOMHort, no services needed
+
+# dry run against a running BOMHort (no upload; writes ./vex/<name>.vexviper.openvex.json)
+cat > vexviper.local.yaml <<'Y'
+bomhort: { url: http://localhost:8080 }
+repo:
+  cache_dir: /tmp/vexviper-cache
+  sboms:
+    - { match: "kubermatic_kubelb_*", repo: kubermatic/kubelb }   # SBOM lacks VCS refs
+vex: { out_dir: ./vex }
+Y
+bin/vexviper generate --config vexviper.local.yaml --sbom kubermatic_kubelb_1.4.2.spdx.json
+bin/vexviper generate --config vexviper.local.yaml --sbom kubermatic_kubelb_1.4.2.spdx.json \
+  --only GO-2026-5026 --provider github --stdout --log-level debug   # needs GITHUB_TOKEN (models:read)
+
+# full round trip incl. upload → BOMHort applies vex_status (isolated stack on :18080)
+BOMHORT_SRC=~/GolandProjects/seebom make e2e
+BOMHORT_SRC=~/GolandProjects/seebom ./hack/e2e-bomhort.sh --keep   # keep stack for manual poking
+
+# MCP server for your IDE / Copilot / Claude (see examples/mcp-client-config.json)
+bin/vexviper mcp-serve --bomhort http://localhost:8080
+```
+
+`--log-level debug` shows repository resolution and govulncheck. If every Go finding ends
+as `under_investigation`, check the log for `govulncheck failed`: govulncheck needs a `go`
+toolchain — VEXViper looks in PATH, `$GOROOT/bin`, `~/sdk/go*/bin` and `/usr/local/go/bin`.
+Private repositories need git credentials (e.g. a credential helper or `GIT_CONFIG_GLOBAL`).
+
 ## Development
 
 ```sh

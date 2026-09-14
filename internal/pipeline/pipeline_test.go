@@ -452,3 +452,29 @@ func TestRunReassessAfter(t *testing.T) {
 		}
 	})
 }
+
+func TestFindGoBin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GOROOT", "")
+	for _, v := range []string{"go1.24.1", "go1.25.10", "go1.9.0"} {
+		dir := filepath.Join(home, "sdk", v, "bin")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Highest semver wins (not lexical: go1.9.0 < go1.25.10); GOROOT beats all.
+	if got := findGoBin(); got != filepath.Join(home, "sdk", "go1.25.10", "bin") {
+		t.Fatalf("findGoBin = %q", got)
+	}
+	root := filepath.Join(home, "root")
+	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "bin", "go"), []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("GOROOT", root)
+	if got := findGoBin(); got != filepath.Join(root, "bin") {
+		t.Fatalf("GOROOT not preferred: %q", got)
+	}
+}
