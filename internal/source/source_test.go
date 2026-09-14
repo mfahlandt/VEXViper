@@ -111,3 +111,27 @@ func TestLoadNotFound(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestLoadDeduplicatesFindings(t *testing.T) {
+	api := &fakeAPI{
+		sbom: bomhort.SBOM{ID: "id-3"},
+		vulns: []bomhort.Vulnerability{
+			{VulnID: "GHSA-1", PURL: "pkg:npm/a@1", SourceFile: "x.spdx.json"},
+			{VulnID: "GHSA-1", PURL: "pkg:npm/a@1", SourceFile: "y.openvex.json", VEXStatus: "affected"},
+			{VulnID: "GHSA-1", PURL: "pkg:npm/b@1"},
+			{VulnID: "GHSA-2", PURL: "pkg:npm/a@1"},
+		},
+		depsErr: errors.New("boom"),
+		rawErr:  errors.New("no storage"),
+	}
+	res, err := Load(context.Background(), api, "id-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Findings) != 3 {
+		t.Fatalf("expected 3 unique findings, got %d: %+v", len(res.Findings), res.Findings)
+	}
+	if res.Findings[0].VulnID != "GHSA-1" || res.Findings[0].PURL != "pkg:npm/a@1" || res.Findings[0].VEXStatus != "affected" {
+		t.Fatalf("duplicate should keep vex_status: %+v", res.Findings[0])
+	}
+}

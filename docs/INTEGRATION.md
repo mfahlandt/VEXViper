@@ -45,6 +45,13 @@ statement VEXViper emits:
 
 Only OpenVEX is supported by BOMHort, hence only OpenVEX is emitted.
 
+`GET /sboms/{id}/vulnerabilities` LEFT JOINs `vex_statements` without collapsing to the
+newest statement, so after several uploads for the same SBOM the endpoint returns **one row
+per matching statement** (same `vuln_id`/`purl`, possibly differing `vex_status`). VEXViper
+dedupes findings by `(vuln_id, purl)` — any non-empty status counts as "already VEXed" — and
+uses `/api/v1/vex/statements` (`vex_timestamp`) whenever the *newest* verdict matters
+(re-assessment TTL). Worth raising upstream alongside #255 ("latest statement wins").
+
 ### Upload requirements
 
 * `AUTH_ENABLED=true` with `API_KEYS=…` (or `SERVICE_TOKEN`) on the api-gateway;

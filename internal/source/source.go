@@ -107,6 +107,10 @@ func LoadSBOM(ctx context.Context, api API, s bomhort.SBOM) (*Result, error) {
 		}
 	}
 
+	// BOMHort may return one row per (finding, source_file/statement); VEX is
+	// keyed on (vuln_id, purl) so collapse duplicates, preferring a row that
+	// already carries a vex_status.
+	seen := map[string]int{}
 	for _, v := range vulns {
 		f := Finding{
 			VulnID:       strings.TrimSpace(v.VulnID),
@@ -129,6 +133,20 @@ func LoadSBOM(ctx context.Context, api API, s bomhort.SBOM) (*Result, error) {
 			slog.Warn("source: skipping finding without vuln_id or purl", "sbom", s.ID, "vuln", v.VulnID, "purl", v.PURL)
 			continue
 		}
+		key := f.VulnID + "\x00" + f.PURL
+		if i, dup := seen[key]; dup {
+			// BOMHort emits one row per matching VEX statement, so several
+			// documents for the same (vuln, purl) surface as duplicates with
+			// possibly different statuses. Any non-empty status means "already
+			// VEXed"; the newest statement is resolved via /vex/statements.
+			if res.Findings[i].VEXStatus == "" && f.VEXStatus != "" {
+				res.Findings[i].VEXStatus = f.VEXStatus
+			} else if f.VEXStatus != "" && f.VEXStatus != res.Findings[i].VEXStatus {
+				slog.Debug("source: conflicting vex_status rows", "sbom", s.ID, "vuln", f.VulnID, "purl", f.PURL, "kept", res.Findings[i].VEXStatus, "other", f.VEXStatus)
+			}
+			continue
+		}
+		seen[key] = len(res.Findings)
 		res.Findings = append(res.Findings, f)
 	}
 	return res, nil

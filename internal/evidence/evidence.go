@@ -45,6 +45,7 @@ const (
 	KindImportNotFound      Kind = "import_not_found" // vulnerable package path not imported anywhere
 	KindOSVDetails          Kind = "osv_details"
 	KindRepoUnavailable     Kind = "repo_unavailable"
+	KindNoReachabilityTool  Kind = "no_reachability_analysis" // non-Go ecosystem: nothing like govulncheck ran
 )
 
 // Item is one fact with a short human/LLM readable description.
@@ -136,9 +137,14 @@ func (c *Collector) Collect(ctx context.Context, f source.Finding, repoDir strin
 		return r
 	}
 
-	// 4. govulncheck reachability (Go only)
-	if gvc != nil {
+	// 4. govulncheck reachability (Go only). Attaching Go results to npm/pypi
+	// findings misleads models into "govulncheck did not report it" verdicts.
+	isGo := strings.HasPrefix(f.PURL, "pkg:golang/")
+	switch {
+	case gvc != nil && isGo:
 		r.Items = append(r.Items, gvc.EvidenceFor(f.VulnID, r.OSV)...)
+	case !isGo:
+		r.Items = append(r.Items, Item{Kind: KindNoReachabilityTool, Summary: fmt.Sprintf("no reachability analysis available for %s; only version and dependency evidence applies", ecosystem(f.PURL))})
 	}
 
 	// 5. vulnerable symbol grep
@@ -439,6 +445,15 @@ func (c *Collector) runTool(ctx context.Context, dir, bin string, args ...string
 func needsNewerToolchain(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "requires newer Go version") || strings.Contains(msg, "application built with") || strings.Contains(msg, "go.mod requires go >=")
+}
+
+// ecosystem returns the PURL type ("npm", "pypi", ...) for messages.
+func ecosystem(purl string) string {
+	rest := strings.TrimPrefix(purl, "pkg:")
+	if i := strings.IndexByte(rest, '/'); i > 0 {
+		return rest[:i]
+	}
+	return "this ecosystem"
 }
 
 // ParseGovulncheck parses the govulncheck JSON stream.

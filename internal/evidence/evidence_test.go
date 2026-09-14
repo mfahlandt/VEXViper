@@ -331,3 +331,19 @@ func TestRunToolExitCodes(t *testing.T) {
 		t.Fatal("unrelated error must not trigger fallback")
 	}
 }
+
+func TestCollectNonGoSkipsGovulncheck(t *testing.T) {
+	c := &Collector{}
+	gvc := loadGVC(t)
+	f := source.Finding{VulnID: "GHSA-hh8m-fm6v-7cvg", PURL: "pkg:npm/%40angular/core@22.0.8", FixedVersion: "22.0.9", DirectKnown: true, Direct: true}
+	rep := c.Collect(context.Background(), f, t.TempDir(), gvc)
+	if rep.Has(KindNotImported) || rep.Has(KindNotReachable) || rep.Has(KindReachable) {
+		t.Fatalf("govulncheck evidence leaked into npm finding: %+v", rep.Items)
+	}
+	if !rep.Has(KindNoReachabilityTool) || !rep.Has(KindVersionVulnerable) || !rep.Has(KindDirectDependency) {
+		t.Fatalf("expected no_reachability_analysis + version + depth evidence, got %+v", rep.Items)
+	}
+	if ecosystem("pkg:npm/x@1") != "npm" || ecosystem("garbage") != "this ecosystem" {
+		t.Fatal("ecosystem()")
+	}
+}

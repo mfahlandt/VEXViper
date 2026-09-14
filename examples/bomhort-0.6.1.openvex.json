@@ -1,10 +1,10 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://vexviper.dev/docs/public/vex-3430964ca7bbce7136794f489caa3419b85df90ceff6c4ddc2dfa2cd6e43a5f9-14104a51-8b44-515e-8d7b-66cb949603b7",
+  "@id": "https://vexviper.dev/docs/public/vex-e2f0c99c2b386374702f5cf258afddfee28fb8cdb262221e9d37fd03219bdda3-14104a51-8b44-515e-8d7b-66cb949603b7",
   "author": "VEXViper e2e",
   "role": "automated triage (LLM-assisted)",
   "version": 1,
-  "tooling": "vexviper/dev provider=heuristic",
+  "tooling": "vexviper/dev provider=copilot+heuristic",
   "statements": [
     {
       "@id": "https://vexviper.dev/docs/statements/GHSA-hh8m-fm6v-7cvg/pkg_npm__40angular_compiler_22.0.8",
@@ -23,9 +23,11 @@
           }
         }
       ],
-      "status": "under_investigation",
-      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "status": "affected",
+      "status_notes": "provider=copilot confidence=0.95 evidence=version_vulnerable,direct_dependency,osv_details | The installed version 22.0.8 is vulnerable (below fixed version 22.1.0) and is a direct dependency of the product. No evidence of workarounds or mitigations is provided, and reachability analysis is unavailable for npm packages. The vulnerability in Angular's directive host binding sanitization poses a real risk if bomhort uses this feature with user-controlled values.",
+      "action_statement": "Upgrade @angular/compiler to version 22.1.0 or later to patch the sanitization bypass vulnerability.",
+      "action_statement_timestamp": "2026-09-14T20:40:48.177818931Z",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GHSA-hh8m-fm6v-7cvg/pkg_npm__40angular_core_22.0.8",
@@ -44,9 +46,11 @@
           }
         }
       ],
-      "status": "under_investigation",
-      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "status": "affected",
+      "status_notes": "provider=copilot confidence=0.85 evidence=version_vulnerable,direct_dependency,osv_details | The product has installed @angular/core 22.0.8, which is below the fixed version 22.1.0. The package is a direct dependency, and the vulnerability affects a core Angular feature (directive host bindings with sanitization bypass). Without reachability analysis for npm packages, the conservative assumption is that the vulnerable functionality is exploitable.",
+      "action_statement": "Upgrade @angular/core from 22.0.8 to 22.1.0 or later to resolve the sanitization bypass vulnerability in directive host bindings.",
+      "action_statement_timestamp": "2026-09-14T20:40:48.177818931Z",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GHSA-p297-fm68-3q8c/pkg_npm__40angular_common_22.0.8",
@@ -65,9 +69,11 @@
           }
         }
       ],
-      "status": "under_investigation",
-      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "status": "affected",
+      "status_notes": "provider=copilot confidence=0.9 evidence=version_vulnerable,direct_dependency,osv_details | The product contains @angular/common@22.0.8, which is below the fixed version 22.1.1. The package is a direct dependency of bomhort, meaning the vulnerable code is present and in use. While the specific vulnerability requires SSR with hierarchical HttpClient and withRequestsMadeViaParent() configuration, the presence of the vulnerable version in a direct dependency creates an exploitability risk.",
+      "action_statement": "Upgrade @angular/common to version 22.1.1 or later to remediate the HttpTransferCache bypass vulnerability.",
+      "action_statement_timestamp": "2026-09-14T20:40:48.177818931Z",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-5841/pkg_golang_github.com_klauspost_compress_v1.18.6",
@@ -84,10 +90,10 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.85 evidence=govulncheck_not_reachable,import_not_found,direct_dependency | govulncheck reports that the vulnerable s2.NewDict symbol is not reachable from product code, despite the vulnerable module being installed as a dependency. The vulnerable package is not directly imported by product code.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "impact_statement": "No exploitable code path exists to invoke the vulnerable s2.NewDict function from product code.",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-5932/pkg_golang_golang.org_x_crypto_v0.53.0",
@@ -104,10 +110,10 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.95 evidence=govulncheck_not_reachable,import_not_found | govulncheck confirms that no vulnerable symbols from GO-2026-5932 are reachable from product code, despite golang.org/x/crypto being a direct dependency. The vulnerable openpgp subpackages are not imported directly, and symbol-level reachability analysis shows the vulnerable code is not in any execution path of bomhort.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "impact_statement": "The openpgp package vulnerability has no exploitable impact on this product as the vulnerable code is not used.",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-5970/pkg_golang_golang.org_x_text_v0.38.0",
@@ -127,10 +133,10 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.85 evidence=govulncheck_not_reachable,import_not_found,direct_dependency | govulncheck reports that while golang.org/x/text is in the build list, no vulnerable symbol from the unicode/norm package is reachable from product code. The vulnerable package is not directly imported, and static symbol analysis indicates the vulnerable code paths are not executed.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "impact_statement": "An infinite loop in unicode normalization could cause denial of service if the vulnerable code path were reached with malformed UTF-8 input.",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-6303/pkg_golang_golang.org_x_crypto_v0.53.0",
@@ -150,10 +156,10 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.85 evidence=govulncheck_not_reachable,import_not_found | govulncheck reports that while golang.org/x/crypto is in the build list, the vulnerable SSH authentication symbols (NewServerConn, connection.serverAuthenticate) are not reachable from product code. The vulnerable package golang.org/x/crypto/ssh is not directly imported.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "impact_statement": "The SSH source-address enforcement vulnerability in golang.org/x/crypto cannot be exploited in this product because the vulnerable SSH callback functionality is not used or executed.",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-6354/pkg_golang_golang.org_x_crypto_v0.53.0",
@@ -173,10 +179,9 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.9 evidence=govulncheck_not_reachable,import_not_found,version_vulnerable | govulncheck symbol-level analysis confirms that vulnerable symbols in golang.org/x/crypto/ssh are not reachable from product code execution paths, despite golang.org/x/crypto being a direct dependency with vulnerable version v0.53.0. The SSH channel DoS code path is not executed by bomhort.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     },
     {
       "@id": "https://vexviper.dev/docs/statements/GO-2026-6355/pkg_golang_golang.org_x_crypto_v0.53.0",
@@ -196,11 +201,11 @@
         }
       ],
       "status": "not_affected",
-      "status_notes": "provider=heuristic confidence=0.85 evidence=govulncheck_not_reachable | Static call-graph analysis found no path to the vulnerable code.",
+      "status_notes": "provider=copilot confidence=0.88 evidence=govulncheck_not_reachable,import_not_found,version_vulnerable,direct_dependency | govulncheck reports that no vulnerable symbols in golang.org/x/crypto/ssh are reachable from product code, despite the vulnerable package being a direct dependency. The vulnerable functions (Dial, NewClientConn, channel.handlePacket) are not in an execution path used by bomhort.",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "govulncheck symbol-level analysis shows the vulnerable module is present but no vulnerable symbol is reachable from the product's code.",
-      "timestamp": "2026-09-14T16:05:36.893185982Z"
+      "impact_statement": "While an update to golang.org/x/crypto v0.56.0+ is recommended for defense-in-depth, this product is not currently vulnerable to GO-2026-6355 due to non-reachability of the vulnerable SSH code paths.",
+      "timestamp": "2026-09-14T20:40:48.177818931Z"
     }
   ],
-  "timestamp": "2026-09-14T16:05:36Z"
+  "timestamp": "2026-09-14T20:40:48Z"
 }
