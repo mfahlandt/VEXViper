@@ -37,7 +37,20 @@ llm:
 
 repo:
   cache_dir: .vexviper-cache
-  # override: github.com/owner/name@v1.2.3   # force the product repository
+  # override: github.com/owner/name@v1.2.3   # force ONE repository for every SBOM (rarely useful)
+  # Pin repositories per SBOM when the SBOM carries no usable VCS metadata
+  # (e.g. pkg:generic roots). `match` is compared against the BOMHort SBOM id,
+  # document_name and source_file; exact string or glob (path.Match). First hit wins.
+  # `repo` is a URL or owner/name[@ref]; "{version}" expands to the version parsed
+  # from the SBOM name (kubelb-1.4.2.spdx.json -> v1.4.2). Without @ref the parsed
+  # version is used as ref automatically.
+  sboms:
+    - match: "kubelb-*"
+      repo: kubermatic/kubelb
+    - match: "my-service.cdx.json"
+      repo: https://gitlab.example.com/team/my-service@release-{version}
+    # - match: "3f1c…-uuid"                  # BOMHort SBOM id
+    #   repo: acme/internal
   clone: true                                 # clone the product repo for code-level evidence
   govulncheck: true                           # run govulncheck when the product is a Go module
 

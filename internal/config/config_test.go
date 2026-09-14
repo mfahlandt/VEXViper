@@ -130,3 +130,44 @@ func TestValidateErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestRepoFor(t *testing.T) {
+	r := Repo{SBOMs: []SBOMRepo{
+		{Match: "abc-123", Repo: "by/id"},
+		{Match: "kubelb-*", Repo: "kubermatic/kubelb"},
+		{Match: "*.cdx.json", Repo: "cdx/any"},
+		{Match: "", Repo: "ignored"},
+	}}
+	cases := []struct {
+		names []string
+		want  string
+	}{
+		{[]string{"abc-123", "doc", "file"}, "by/id"},
+		{[]string{"id", "kubelb", "kubelb-1.4.2.spdx.json"}, "kubermatic/kubelb"},
+		{[]string{"id", "", "thing.cdx.json"}, "cdx/any"},
+		{[]string{"id", "doc", "nothing"}, ""},
+	}
+	for _, c := range cases {
+		if got := r.RepoFor(c.names...); got != c.want {
+			t.Errorf("RepoFor(%v) = %q want %q", c.names, got, c.want)
+		}
+	}
+}
+
+func TestLoadRepoSBOMsAndValidate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v.yaml")
+	os.WriteFile(path, []byte("repo:\n  sboms:\n    - match: kubelb-*\n      repo: kubermatic/kubelb\n"), 0o644)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Repo.RepoFor("kubelb-1.4.2"); got != "kubermatic/kubelb" {
+		t.Fatalf("RepoFor = %q", got)
+	}
+	cfg.Repo.SBOMs = append(cfg.Repo.SBOMs, SBOMRepo{Match: "x"}, SBOMRepo{Match: "[", Repo: "a/b"})
+	err = cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "repo.sboms[1]") || !strings.Contains(err.Error(), "repo.sboms[2]") {
+		t.Fatalf("expected validation errors, got %v", err)
+	}
+}

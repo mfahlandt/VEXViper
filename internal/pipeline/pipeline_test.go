@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -171,7 +172,7 @@ func TestRunRegenerateOnlyAndOverride(t *testing.T) {
 	if out.Findings != 1 || out.Skipped != 2 {
 		t.Fatalf("findings=%d skipped=%d", out.Findings, out.Skipped)
 	}
-	if cl.locs[0].URL != "https://github.com/acme/product" || cl.locs[0].How != "override" {
+	if cl.locs[0].URL != "https://github.com/acme/product" || cl.locs[0].How != "flag" {
 		t.Fatalf("override not preferred: %+v", cl.locs[0])
 	}
 	if out.Path != "" {
@@ -329,4 +330,53 @@ func TestNewFromConfig(t *testing.T) {
 	if p.Cloner != nil {
 		t.Fatal("cloner should be nil when clone disabled")
 	}
+}
+
+func TestMaterializeRepoPrecedence(t *testing.T) {
+	prod := source.Product{SBOMID: "sbom-1", DocumentName: "kubelb", SourceFile: "kubelb-1.4.2.spdx.json",
+		RepoHints: []string{"https://github.com/hint/from-sbom"}}
+	mk := func(cfgRepo config.Repo) (*Pipeline, *fakeCloner) {
+		cl := &fakeCloner{dir: t.TempDir()}
+		cfg := config.Default()
+		cfg.Repo = cfgRepo
+		cfg.Repo.Clone = true
+		return &Pipeline{Cfg: cfg, Cloner: cl, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, cl
+	}
+
+	t.Run("config sboms beats sbom hints and derives ref", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "kubelb-*", Repo: "kubermatic/kubelb"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		loc := cl.locs[0]
+		if loc.URL != "https://github.com/kubermatic/kubelb" || loc.Ref != "v1.4.2" || loc.How != "config-sbom" {
+			t.Fatalf("got %+v", loc)
+		}
+	})
+	t.Run("version placeholder", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "sbom-1", Repo: "https://gitlab.com/a/b@release-{version}"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].Ref != "release-v1.4.2" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("flag beats config", func(t *testing.T) {
+		p, cl := mk(config.Repo{Override: "glob/al", SBOMs: []config.SBOMRepo{{Match: "*", Repo: "per/sbom"}}})
+		p.MaterializeRepo(context.Background(), prod, "flag/wins@v9")
+		if cl.locs[0].URL != "https://github.com/flag/wins" || cl.locs[0].How != "flag" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("global override beats per-sbom", func(t *testing.T) {
+		p, cl := mk(config.Repo{Override: "glob/al", SBOMs: []config.SBOMRepo{{Match: "*", Repo: "per/sbom"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].URL != "https://github.com/glob/al" || cl.locs[0].How != "config" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
+	t.Run("no match falls back to sbom hint", func(t *testing.T) {
+		p, cl := mk(config.Repo{SBOMs: []config.SBOMRepo{{Match: "other-*", Repo: "x/y"}}})
+		p.MaterializeRepo(context.Background(), prod, "")
+		if cl.locs[0].URL != "https://github.com/hint/from-sbom" || cl.locs[0].How != "sbom" {
+			t.Fatalf("got %+v", cl.locs[0])
+		}
+	})
 }

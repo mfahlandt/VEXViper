@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -95,6 +96,41 @@ type Repo struct {
 	Clone bool `yaml:"clone"`
 	// Govulncheck enables running govulncheck when the product is a Go module.
 	Govulncheck bool `yaml:"govulncheck"`
+	// SBOMs maps individual SBOMs to their source repository. The first
+	// matching entry wins and takes precedence over hints from the SBOM
+	// itself; Override (global) still wins over both.
+	SBOMs []SBOMRepo `yaml:"sboms"`
+}
+
+// SBOMRepo pins the repository for SBOMs whose id, document name or source
+// file matches Match (exact string or path.Match glob, e.g. "kubelb-*").
+type SBOMRepo struct {
+	Match string `yaml:"match"`
+	// Repo is a URL or owner/name[@ref]. A ref of "{version}" is replaced by
+	// the version derived from the SBOM name (e.g. kubelb-1.4.2 → v1.4.2).
+	Repo string `yaml:"repo"`
+}
+
+// RepoFor returns the configured repository for an SBOM identified by any of
+// the given names (id, document name, source file), or "" when none matches.
+func (r Repo) RepoFor(names ...string) string {
+	for _, e := range r.SBOMs {
+		if e.Match == "" || e.Repo == "" {
+			continue
+		}
+		for _, n := range names {
+			if n == "" {
+				continue
+			}
+			if n == e.Match {
+				return e.Repo
+			}
+			if ok, err := path.Match(e.Match, n); err == nil && ok {
+				return e.Repo
+			}
+		}
+	}
+	return ""
 }
 
 // VEX configures document metadata.
@@ -240,6 +276,13 @@ func (c *Config) Validate() error {
 	}
 	if c.LLM.MinConfidence < 0 || c.LLM.MinConfidence > 1 {
 		errs = append(errs, fmt.Errorf("llm.min_confidence %v must be within [0,1]", c.LLM.MinConfidence))
+	}
+	for i, e := range c.Repo.SBOMs {
+		if e.Match == "" || e.Repo == "" {
+			errs = append(errs, fmt.Errorf("repo.sboms[%d]: match and repo are required", i))
+		} else if _, err := path.Match(e.Match, ""); err != nil {
+			errs = append(errs, fmt.Errorf("repo.sboms[%d]: invalid match pattern %q: %v", i, e.Match, err))
+		}
 	}
 	if c.LLM.Provider == ProviderOpenAI {
 		if c.LLM.OpenAI.BaseURL == "" || c.LLM.OpenAI.Model == "" {

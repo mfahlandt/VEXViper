@@ -104,7 +104,8 @@ Secrets: one Secret with `api-key` (BOMHort) and optionally `openai-api-key`.
 ## 6. Known limitations
 
 * Repository resolution depends on SBOM quality: syft `dir:` SBOMs of Go repos resolve
-  (VCS ref / main module); `pkg:generic/<name>@<ver>` roots without VCS refs need `--repo`.
+  (VCS ref / main module); `pkg:generic/<name>@<ver>` roots without VCS refs need `--repo`
+  or a `repo.sboms` pin in the config (matched by SBOM id / document name / source file).
 * govulncheck covers Go only. Other ecosystems get version-based evidence and OSV context,
   so without an LLM they end as `under_investigation`.
 * The heuristic provider never claims `affected` without govulncheck reachability.

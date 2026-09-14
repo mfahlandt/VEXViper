@@ -72,8 +72,13 @@ make build                                   # → bin/vexviper (needs Go ≥ 1.
 # assess one SBOM already known to BOMHort, write ./bomhort-0.6.1.vexviper.openvex.json
 bin/vexviper generate --bomhort http://localhost:8080 --sbom bomhort-0.6.1
 
-# repository cannot be derived from the SBOM? tell VEXViper
+# repository cannot be derived from the SBOM? tell VEXViper (one-shot) …
 bin/vexviper generate --sbom kubelb-1.4.2 --repo kubermatic/kubelb@v1.4.2
+# … or pin it permanently in vexviper.yaml so watch/mcp-serve know it too:
+#   repo:
+#     sboms:
+#       - match: "kubelb-*"          # glob on SBOM id | document_name | source_file
+#         repo: kubermatic/kubelb    # ref defaults to the version in the SBOM name (v1.4.2)
 
 # push it back and wait until BOMHort applied the statements
 BOMHORT_API_KEY=… bin/vexviper generate --sbom bomhort-0.6.1 --upload --wait 3m
@@ -106,9 +111,17 @@ every key overridable by `VEXVIPER_<SECTION>_<KEY>` and secrets via `*_env` indi
 | `llm.openai.{base_url,model,api_key_env}` | `VEXVIPER_OPENAI_*` | OpenAI / `gpt-4o-mini` | any OpenAI-compatible endpoint (Azure, GitHub Models, Ollama, vLLM, LiteLLM) |
 | `llm.mcp.{transport,command,args,url,tool}` | `VEXVIPER_MCP_*` | stdio / `assess_vulnerability` | the MCP server + tool VEXViper calls |
 | `repo.{cache_dir,override,clone,govulncheck}` | `VEXVIPER_REPO_*` | `.vexviper-cache`, clone+govulncheck on | product repo handling |
+| `repo.sboms[]{match,repo}` | — | | per-SBOM repository pins (glob match, `{version}` placeholder) |
 | `vex.{author,author_role,supplier,namespace,out_dir,upload,regenerate}` | `VEXVIPER_VEX_*` | `VEXViper`, `automated triage (LLM-assisted)` | document metadata & output |
 | `watch.{interval,state_file}` | `VEXVIPER_WATCH_*` | `15m` | poller |
 | `timeout` | `VEXVIPER_TIMEOUT` | `30m` | per SBOM |
+
+### Where does the product repository come from?
+
+Precedence: `--repo` flag / `repo` tool argument → `repo.override` → `repo.sboms` match →
+VCS external refs and main module in the SBOM → root PURLs. Missing refs are filled with
+the version parsed from the SBOM name. `list_sboms` (MCP) shows `configured_repo` so an
+agent can see which SBOMs still need a pin.
 
 ### Assessment providers
 

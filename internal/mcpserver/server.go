@@ -79,6 +79,8 @@ type sbomOut struct {
 	PackageCount uint64 `json:"package_count"`
 	VulnCount    uint64 `json:"vuln_count"`
 	IngestedAt   string `json:"ingested_at"`
+	// ConfiguredRepo is the repository pinned for this SBOM in repo.sboms (if any).
+	ConfiguredRepo string `json:"configured_repo,omitempty"`
 }
 
 type listSBOMsOut struct {
@@ -95,7 +97,8 @@ func (s *Server) listSBOMs(ctx context.Context, _ *mcp.CallToolRequest, in listS
 		if in.Search != "" && !strings.Contains(strings.ToLower(b.DocumentName+" "+b.SourceFile), strings.ToLower(in.Search)) {
 			continue
 		}
-		out.SBOMs = append(out.SBOMs, sbomOut{ID: b.ID, DocumentName: b.DocumentName, SourceFile: b.SourceFile, PackageCount: b.PackageCount, VulnCount: b.VulnCount, IngestedAt: b.IngestedAt})
+		out.SBOMs = append(out.SBOMs, sbomOut{ID: b.ID, DocumentName: b.DocumentName, SourceFile: b.SourceFile, PackageCount: b.PackageCount, VulnCount: b.VulnCount, IngestedAt: b.IngestedAt,
+			ConfiguredRepo: s.Pipeline.Cfg.Repo.RepoFor(b.ID, b.DocumentName, b.SourceFile)})
 	}
 	return nil, out, nil
 }

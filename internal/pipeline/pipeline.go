@@ -302,15 +302,26 @@ func (p *Pipeline) MaterializeRepo(ctx context.Context, prod source.Product, ove
 		log = slog.Default()
 	}
 	var candidates []repo.Location
+	fallbackRef := VersionFromName(prod.SourceFile, prod.DocumentName)
+	how := "flag"
 	if override == "" {
 		override = p.Cfg.Repo.Override
+		how = "config"
 	}
+	if override == "" {
+		override = p.Cfg.Repo.RepoFor(prod.SBOMID, prod.DocumentName, prod.SourceFile)
+		how = "config-sbom"
+	}
+	override = strings.ReplaceAll(override, "{version}", fallbackRef)
 	if loc, ok := repo.FromOverride(override); ok {
+		loc.How = how
+		if loc.Ref == "" {
+			loc.Ref = fallbackRef
+		}
 		candidates = append(candidates, loc)
 	} else if override != "" {
 		log.Warn("repo override not understood", "override", override)
 	}
-	fallbackRef := VersionFromName(prod.SourceFile, prod.DocumentName)
 	for _, h := range prod.RepoHints {
 		if loc, ok := repo.FromOverride(h); ok {
 			loc.How = "sbom"

@@ -34,6 +34,10 @@ config:
   repo:
     clone: true
     govulncheck: true
+    # Pin repositories for SBOMs without usable VCS metadata:
+    sboms: []
+    #  - match: "kubelb-*"
+    #    repo: kubermatic/kubelb
   vex:
     author: VEXViper
     author_role: automated triage (LLM-assisted)
