@@ -33,7 +33,7 @@ Packages (`internal/`):
 - `pipeline` – Orchestration (`Run`, `RunOptions`, `Outcome`), `NewProvider`, `MaterializeRepo`, `staleStatements`/`ReassessAfter`, `Wait`; `watch.go` holds the polling loop and `WatchState`.
 - `mcpserver` – MCP tools: `list_sboms`, `list_findings`, `get_repo_context`, `draft_vex`, `generate_vex`, `upload_vex`, `list_vex_statements`.
 
-Other locations: `cmd/vexviper` (CLI, flags, summary), `test/integration` (`-tags=integration`, needs a live BOMHort), `hack/e2e-bomhort.sh` + `hack/docker-compose.e2e.yml` (isolated BOMHort stack on :18080, key `vexviper-e2e-key`), `deploy/helm/vexviper` (CronJob or Deployment), `docs/INTEGRATION.md` (API contract, deployment, safety posture, upstream findings), `examples/` (config, MCP client config, generated VEX for BOMHort 0.6.1).
+Other locations: `cmd/vexviper` (CLI, flags, summary), `test/integration` (`-tags=integration`, needs a live BOMHort), `hack/e2e-bomhort.sh` + `hack/docker-compose.e2e.yml` (isolated BOMHort stack on :18080, key `vexviper-e2e-key`; `BOMHORT_BUILD=1` builds BOMHort from source, `.github/workflows/e2e.yml` runs it on PRs against `BOMHORT_PINNED_REF` and weekly against BOMHort `main`), `deploy/helm/vexviper` (CronJob or Deployment), `docs/INTEGRATION.md` (API contract, deployment, safety posture, upstream findings), `examples/` (config, MCP client config, generated VEX for BOMHort 0.6.1).
 
 # Tech Stack
 - **Language:** Go (`go.mod` `go 1.25.x`; Dockerfile base Go 1.26). Module path `github.com/seebom-labs/vexviper`.
@@ -65,6 +65,7 @@ make test-race         # with -race
 make lint              # gofmt check + go vet (incl. -tags=integration ./test/...)
 make test-integration  # needs a live BOMHort with AUTH_ENABLED=true (see hack/)
 make e2e               # ./hack/e2e-bomhort.sh — full isolated BOMHort stack, ingest, generate, upload, verify
+make e2e-ci            # same with BOMHort built from $BOMHORT_SRC (what .github/workflows/e2e.yml runs)
 make clean
 ```
 

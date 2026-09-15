@@ -16,10 +16,21 @@
 # Env:
 #   BOMHORT_SRC            path to a BOMHort checkout (db/ migrations, sboms/ policy files) [required]
 #   BOMHORT_IMAGE_PREFIX   image prefix (default "seebom-" = images built by BOMHort's compose;
-#                          use "ghcr.io/seebom-labs/seebom/" for published images)
-#   BOMHORT_IMAGE_TAG      image tag (default latest; "dev" for ghcr)
+#                          use "ghcr.io/seebom-labs/bomhort/" for published images)
+#   BOMHORT_IMAGE_TAG      image tag (default latest; a release like "0.6.1" for ghcr)
+#   BOMHORT_BUILD          "1" builds api-gateway/ingestion-watcher/parsing-worker from
+#                          $BOMHORT_SRC/backend/Dockerfile and tags them
+#                          ${BOMHORT_IMAGE_PREFIX}<svc>:${BOMHORT_IMAGE_TAG} first (CI; the
+#                          published 0.6.1 images predate the upload endpoint)
 #   E2E_API_PORT           host port for the api-gateway (default 18080)
 #   VEXVIPER_LLM_PROVIDER  heuristic|openai|mcptool (default heuristic)
+#   E2E_WORK               work dir (default .e2e; kept for artifacts)
+#   E2E_UPDATE_EXAMPLE     "1" copies the result to examples/bomhort-0.6.1.openvex.json
+#                          (default 1 locally, set 0 in CI)
+#   E2E_MIN_STATEMENTS     fail unless the document has at least this many statements (default 1)
+#
+# Exit codes: 0 ok, 1 stack/ingestion/assertion failure. Compose logs are
+# written to $E2E_WORK/logs/ on failure for CI artifacts.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,11 +48,14 @@ export E2E_SERVICE_TOKEN="${E2E_SERVICE_TOKEN:-vexviper-e2e-service-token}"
 PROJECT="${E2E_PROJECT:-vexviper-e2e}"
 COMPOSE=(docker compose -p "$PROJECT" -f hack/docker-compose.e2e.yml)
 KEEP=0
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --keep) KEEP=1 ;;
     --provider) shift; export VEXVIPER_LLM_PROVIDER="$1" ;;
+    --provider=*) export VEXVIPER_LLM_PROVIDER="${1#--provider=}" ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 WORK="${E2E_WORK:-$ROOT/.e2e}"
@@ -57,7 +71,17 @@ if command -v chcon >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null || echo Disab
   chcon -Rt container_file_t "$E2E_SBOM_DIR" 2>/dev/null || true
 fi
 
+dump_logs() {
+  mkdir -p "$WORK/logs"
+  for svc in api-gateway ingestion-watcher parsing-worker clickhouse; do
+    "${COMPOSE[@]}" logs --no-color --tail 500 "$svc" > "$WORK/logs/$svc.log" 2>&1 || true
+  done
+  echo "    compose logs in $WORK/logs/"
+}
+
 cleanup() {
+  status=$?
+  [ "$status" = "0" ] || dump_logs
   if [ "$KEEP" = "1" ]; then
     echo "--keep: leaving stack '$PROJECT' running (API http://localhost:$E2E_API_PORT, key $E2E_API_KEY)"
     return
@@ -67,6 +91,12 @@ cleanup() {
 trap cleanup EXIT
 
 API="http://localhost:$E2E_API_PORT"
+if [ "${BOMHORT_BUILD:-0}" = "1" ]; then
+  echo "==> building BOMHort images from $BOMHORT_SRC/backend ($(git -C "$BOMHORT_SRC" rev-parse --short HEAD 2>/dev/null || echo unknown))"
+  for svc in api-gateway ingestion-watcher parsing-worker; do
+    docker build -q --target "$svc" -t "${BOMHORT_IMAGE_PREFIX}${svc}:${BOMHORT_IMAGE_TAG}" "$BOMHORT_SRC/backend" >/dev/null
+  done
+fi
 echo "==> starting BOMHort e2e stack ($PROJECT) with images ${BOMHORT_IMAGE_PREFIX}*:${BOMHORT_IMAGE_TAG}"
 "${COMPOSE[@]}" up -d --quiet-pull
 
@@ -108,6 +138,9 @@ echo "==> vexviper generate --upload (provider=$VEXVIPER_LLM_PROVIDER)"
 
 DOC="$OUT/bomhort-0.6.1.vexviper.openvex.json"
 [ -s "$DOC" ] || { echo "no document written"; exit 1; }
+N_STMT=$(python3 -c 'import sys,json; print(len(json.load(open(sys.argv[1]))["statements"]))' "$DOC")
+echo "    document statements: $N_STMT"
+[ "$N_STMT" -ge "${E2E_MIN_STATEMENTS:-1}" ] || { echo "expected at least ${E2E_MIN_STATEMENTS:-1} statements"; exit 1; }
 
 echo "==> verifying BOMHort applied the VEX"
 for i in $(seq 1 60); do
@@ -121,9 +154,12 @@ echo "    vex statements in BOMHort: $STATEMENTS; vulnerabilities with vex_statu
 
 echo "==> running Go integration tests against the stack"
 BOMHORT_URL="$API" BOMHORT_API_KEY="$E2E_API_KEY" BOMHORT_E2E_SBOM="$SBOM_ID" \
-  $GO test -tags integration -count=1 -v ./test/integration/ 2>&1 | grep -E "^(=== RUN|--- |PASS|FAIL|ok|\s+integration)" || true
+  $GO test -tags integration -count=1 -v ./test/integration/ 2>&1 | tee "$WORK/integration.log" | grep -E "^(=== RUN|--- |PASS|FAIL|ok|\s+integration)" || true
+grep -qE "^(ok|PASS)" "$WORK/integration.log" || { echo "integration tests failed"; exit 1; }
 
-mkdir -p examples
-cp "$DOC" examples/bomhort-0.6.1.openvex.json
-echo "==> example written to examples/bomhort-0.6.1.openvex.json"
+if [ "${E2E_UPDATE_EXAMPLE:-1}" = "1" ]; then
+  mkdir -p examples
+  cp "$DOC" examples/bomhort-0.6.1.openvex.json
+  echo "==> example written to examples/bomhort-0.6.1.openvex.json"
+fi
 echo "E2E OK"

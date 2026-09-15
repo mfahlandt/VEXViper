@@ -344,9 +344,18 @@ runs `vexviper generate --upload --wait`, asserts BOMHort applied every statemen
 
 ```sh
 BOMHORT_SRC=~/GolandProjects/seebom make e2e          # needs docker compose + locally built seebom-* images
+BOMHORT_SRC=~/GolandProjects/seebom make e2e-ci       # builds BOMHort from source first, leaves examples/ alone
 ```
 
-Env: `BOMHORT_IMAGE_PREFIX`/`BOMHORT_IMAGE_TAG` to pick images, `--keep` to leave the stack up.
+Env: `BOMHORT_IMAGE_PREFIX`/`BOMHORT_IMAGE_TAG` to pick images, `BOMHORT_BUILD=1` to build
+them from `$BOMHORT_SRC/backend/Dockerfile`, `--keep` to leave the stack up. The published
+`ghcr.io/seebom-labs/bomhort/*:0.6.1` images predate the upload endpoint, so build from
+source until the next BOMHort release.
+
+**CI:** `.github/workflows/e2e.yml` runs the same script on every PR against a pinned
+BOMHort commit (`BOMHORT_PINNED_REF`) and weekly against BOMHort `main`; the generated
+document, compose logs and integration-test output are uploaded as artifacts. Bump the pin
+when VEXViper starts relying on newer BOMHort API behaviour.
 
 ## Layout
 
