@@ -21,6 +21,7 @@ Decide the OpenVEX status for this (vulnerability, product) pair:
 Rules:
 - Be conservative. False "not_affected" claims are dangerous; when in doubt use "under_investigation" with a lower confidence.
 - Never invent evidence. Reference the evidence kinds you relied on in evidence_refs.
+- For non-Go ecosystems (npm, pypi, cargo, gem, composer, maven) there is no call-graph analysis: "package_imported", "import_not_found", "dev_dependency" and "manifest_not_found" describe how the package is declared and imported, not whether the vulnerable code executes. A dev-only dependency that no runtime source imports may justify not_affected with vulnerable_code_not_present only if the evidence shows it is not shipped; "import_not_found" alone does not.
 - confidence is your calibrated probability (0..1) that the status is correct.
 - reasoning: 1-3 sentences, plain text, no markdown.
 - Respond with a single JSON object matching the schema. No prose before or after.`

@@ -202,6 +202,9 @@ kept clean so `git filter-repo --path internal/bomhort` yields the library with 
 * Repository resolution depends on SBOM quality: syft `dir:` SBOMs of Go repos resolve
   (VCS ref / main module); `pkg:generic/<name>@<ver>` roots without VCS refs need `--repo`
   or a `repo.sboms` pin in the config (matched by SBOM id / document name / source file).
-* govulncheck covers Go only. Other ecosystems get version-based evidence and OSV context,
-  so without an LLM they end as `under_investigation`.
+* Call-graph reachability (govulncheck) covers Go only. npm, PyPI, Cargo, RubyGems,
+  Composer and Maven products get version evidence, OSV context plus manifest/lockfile depth
+  (`dev_dependency`, `manifest_not_found`) and a source import scan (`package_imported`,
+  `import_not_found`, test paths excluded). None of it is strong evidence, so without an LLM
+  they end as `under_investigation` with a confidence that reflects the evidence.
 * The heuristic provider never claims `affected` without govulncheck reachability.
