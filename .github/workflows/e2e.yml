@@ -1,0 +1,85 @@
+name: E2E (BOMHort)
+# Runs hack/e2e-bomhort.sh against a real BOMHort stack: ingest BOMHort's own
+# release SBOM, generate + upload VEX, assert BOMHort applied it, run the
+# integration tests. BOMHort is built from source (the published 0.6.1 images
+# predate the SBOM/VEX upload endpoint). Pull requests pin a known-good BOMHort
+# commit; the weekly schedule also runs against upstream `main` to catch
+# API drift early.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      bomhort_ref:
+        description: BOMHort git ref to build (commit, tag or branch)
+        default: main
+env:
+  # Bump when BOMHort's API changes are needed; keep it green on PRs.
+  BOMHORT_PINNED_REF: 32203c447643714debc75e66e1c99da58a3de600
+permissions:
+  contents: read
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  refs:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_REF: ${{ github.event.inputs.bomhort_ref }}
+        run: |
+          case "$EVENT" in
+            schedule) echo "matrix=[\"$BOMHORT_PINNED_REF\",\"main\"]" ;;
+            workflow_dispatch) echo "matrix=[\"${INPUT_REF:-main}\"]" ;;
+            *) echo "matrix=[\"$BOMHORT_PINNED_REF\"]" ;;
+          esac >> "$GITHUB_OUTPUT"
+  bomhort:
+    needs: refs
+    name: bomhort@${{ matrix.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.refs.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout BOMHort
+        uses: actions/checkout@v4
+        with:
+          repository: seebom-labs/BOMHort
+          ref: ${{ matrix.ref }}
+          path: .bomhort
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run E2E
+        env:
+          BOMHORT_SRC: ${{ github.workspace }}/.bomhort
+          BOMHORT_BUILD: "1"
+          BOMHORT_IMAGE_PREFIX: vexviper-e2e/
+          BOMHORT_IMAGE_TAG: ci
+          E2E_UPDATE_EXAMPLE: "0"
+          # BOMHort's go.mod may need a newer patch release than ours; let
+          # govulncheck's `go` fetch it instead of failing.
+          GOTOOLCHAIN: auto
+        run: hack/e2e-bomhort.sh
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-bomhort-${{ strategy.job-index }}
+          if-no-files-found: ignore
+          path: |
+            .e2e/out/
+            .e2e/logs/
+            .e2e/integration.log

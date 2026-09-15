@@ -3,7 +3,7 @@ BIN := bin/vexviper
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test test-race test-integration lint fmt vet clean e2e
+.PHONY: all build test test-race test-integration lint fmt vet clean e2e e2e-ci
 
 all: build
 
@@ -31,6 +31,10 @@ lint: fmt vet
 
 e2e:
 	./hack/e2e-bomhort.sh
+
+# Same as CI (.github/workflows/e2e.yml): build BOMHort from $(BOMHORT_SRC), do not touch examples/.
+e2e-ci:
+	BOMHORT_BUILD=1 BOMHORT_IMAGE_PREFIX=vexviper-e2e/ BOMHORT_IMAGE_TAG=ci E2E_UPDATE_EXAMPLE=0 ./hack/e2e-bomhort.sh
 
 clean:
 	rm -rf bin dist .vexviper-cache
