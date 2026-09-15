@@ -19,7 +19,8 @@ BOMHort findings ──► resolve product repo ──► clone + govulncheck + 
 2. resolves the product's source repository (from the SBOM's VCS metadata / PURLs, or
    `--repo owner/name@ref`), clones it shallowly and gathers **deterministic evidence**:
    installed vs fixed version, direct/transitive depth, `govulncheck` reachability for Go
-   products, symbol references, OSV details;
+   products, manifest/lockfile/import evidence for npm, PyPI, Cargo, RubyGems, Composer and
+   Maven products, symbol references, OSV details;
 3. asks an assessment provider for `status/justification/confidence/reasoning` per finding —
    a rules-only **heuristic** (default, offline), any **OpenAI-compatible** endpoint,
    **GitHub Models** or the **GitHub Copilot CLI** (your Copilot subscription), or a tool on a
@@ -223,7 +224,9 @@ agent can see which SBOMs still need a pin.
 
 * **heuristic** (default) — no network, no key. `fixed` when installed ≥ `fixed_version`;
   `not_affected/vulnerable_code_not_in_execute_path` (0.85) when govulncheck finds no
-  reachable symbol; `affected` (0.9) when it does; otherwise `under_investigation`.
+  reachable symbol; `affected` (0.9) when it does; otherwise `under_investigation` — with
+  a calibrated confidence and cited evidence for non-Go ecosystems (dev-only dependency
+  never imported 0.6, imported package 0.45 …) so reviewers can sort drafts.
 * **openai** — `POST {base_url}/chat/completions` with JSON-schema structured output,
   `temperature 0`. System prompt in [`internal/llm/prompt.go`](internal/llm/prompt.go)
   frames a *conservative* analyst and forbids inventing evidence.
@@ -259,7 +262,10 @@ Assessment schema: `status`, `justification`, `impact_statement`, `action_statem
 
 * confidence `< min_confidence` → `under_investigation`;
 * `not_affected` requires at least one strong deterministic evidence item (govulncheck
-  unreachable, component absent …) unless `allow_unsupported_not_affected: true`;
+  unreachable, component absent …) unless `allow_unsupported_not_affected: true`.
+  Manifest, lockfile and import evidence for non-Go ecosystems (`dev_dependency`,
+  `package_imported`, `import_not_found`, `manifest_not_found`) is never strong: it shows
+  how a package is declared and imported, not whether the vulnerable code executes;
 * `fixed` requires a known `fixed_version` ≤ installed version;
 * every statement passes go-vex `Statement.Validate()`; `status_notes` records provider,
   confidence and reasoning; `tooling` records `vexviper/<version> provider=<name>`.

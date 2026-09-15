@@ -144,7 +144,15 @@ func (c *Collector) Collect(ctx context.Context, f source.Finding, repoDir strin
 	case gvc != nil && isGo:
 		r.Items = append(r.Items, gvc.EvidenceFor(f.VulnID, r.OSV)...)
 	case !isGo:
-		r.Items = append(r.Items, Item{Kind: KindNoReachabilityTool, Summary: fmt.Sprintf("no reachability analysis available for %s; only version and dependency evidence applies", ecosystem(f.PURL))})
+		// Manifest/lockfile depth and import scan for npm, pypi, cargo, gem,
+		// composer, maven. Never Strong: it does not prove reachability.
+		eco := c.ecosystemEvidence(repoDir, f)
+		if f.DirectKnown {
+			// BOMHort's dependency graph already settled direct vs transitive.
+			eco = dropKinds(eco, KindDirectDependency, KindTransitive)
+		}
+		r.Items = append(r.Items, eco...)
+		r.Items = append(r.Items, Item{Kind: KindNoReachabilityTool, Summary: fmt.Sprintf("no call-graph reachability analysis available for %s; manifest, lockfile and import evidence above does not prove whether the vulnerable code executes", ecosystem(f.PURL))})
 	}
 
 	// 5. vulnerable symbol grep
@@ -152,6 +160,22 @@ func (c *Collector) Collect(ctx context.Context, f source.Finding, repoDir strin
 		r.Items = append(r.Items, c.symbolEvidence(repoDir, r.OSV)...)
 	}
 	return r
+}
+
+func dropKinds(items []Item, kinds ...Kind) []Item {
+	out := items[:0:0]
+	for _, it := range items {
+		drop := false
+		for _, k := range kinds {
+			if it.Kind == k {
+				drop = true
+			}
+		}
+		if !drop {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func pkgName(f source.Finding) string {

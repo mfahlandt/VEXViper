@@ -114,6 +114,10 @@ func TestHeuristic(t *testing.T) {
 		{"not reachable weak", []evidence.Item{item(evidence.KindNotReachable, false)}, vex.StatusUnderInvestigation, ""},
 		{"transitive not imported", []evidence.Item{item(evidence.KindImportNotFound, false), item(evidence.KindTransitive, false)}, vex.StatusUnderInvestigation, ""},
 		{"symbol not referenced", []evidence.Item{item(evidence.KindSymbolNotReferenced, false)}, vex.StatusUnderInvestigation, ""},
+		{"dev dependency not imported", []evidence.Item{item(evidence.KindDevDependency, false), item(evidence.KindDirectDependency, false), item(evidence.KindImportNotFound, false)}, vex.StatusUnderInvestigation, ""},
+		{"dev dependency imported", []evidence.Item{item(evidence.KindDevDependency, false), item(evidence.KindPackageImported, false)}, vex.StatusUnderInvestigation, ""},
+		{"package imported", []evidence.Item{item(evidence.KindDirectDependency, false), item(evidence.KindPackageImported, false), item(evidence.KindNoReachabilityTool, false)}, vex.StatusUnderInvestigation, ""},
+		{"direct not imported", []evidence.Item{item(evidence.KindDirectDependency, false), item(evidence.KindImportNotFound, false)}, vex.StatusUnderInvestigation, ""},
 		{"nothing", nil, vex.StatusUnderInvestigation, ""},
 	}
 	for _, tc := range cases {
@@ -133,6 +137,11 @@ func TestHeuristic(t *testing.T) {
 			}
 			if a.Provider != "heuristic" || a.Reasoning == "" {
 				t.Fatalf("meta = %+v", a)
+			}
+			if strings.Contains(tc.name, "dev dependency") || strings.Contains(tc.name, "imported") {
+				if len(a.EvidenceRefs) == 0 || a.Confidence < 0.4 {
+					t.Fatalf("ecosystem evidence should be cited with a calibrated confidence: %+v", a)
+				}
 			}
 		})
 	}

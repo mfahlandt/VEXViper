@@ -61,6 +61,26 @@ func (h Heuristic) Assess(_ context.Context, req Request) (Assessment, error) {
 		a.Confidence = 0.55
 		a.Reasoning = "Product code imports the vulnerable package but does not reference the vulnerable symbols by name; a manual review is required."
 		a.EvidenceRefs = []string{string(evidence.KindSymbolNotReferenced)}
+	case r.Has(evidence.KindDevDependency) && r.Has(evidence.KindImportNotFound):
+		a.Status = vex.StatusUnderInvestigation
+		a.Confidence = 0.6
+		a.Reasoning = "The package is declared only as a development/test dependency and no runtime source file imports it; confirm it is not shipped before marking not_affected (vulnerable_code_not_present)."
+		a.EvidenceRefs = []string{string(evidence.KindDevDependency), string(evidence.KindImportNotFound)}
+	case r.Has(evidence.KindDevDependency):
+		a.Status = vex.StatusUnderInvestigation
+		a.Confidence = 0.5
+		a.Reasoning = "The package is declared only as a development/test dependency; whether it reaches the shipped artifact needs confirmation."
+		a.EvidenceRefs = []string{string(evidence.KindDevDependency)}
+	case r.Has(evidence.KindPackageImported):
+		a.Status = vex.StatusUnderInvestigation
+		a.Confidence = 0.45
+		a.Reasoning = "Product source imports the vulnerable package; without call-graph analysis for this ecosystem the vulnerable code path cannot be excluded."
+		a.EvidenceRefs = []string{string(evidence.KindPackageImported)}
+	case r.Has(evidence.KindImportNotFound):
+		a.Status = vex.StatusUnderInvestigation
+		a.Confidence = 0.5
+		a.Reasoning = "No product source file imports the vulnerable package directly; use through intermediaries was not excluded."
+		a.EvidenceRefs = []string{string(evidence.KindImportNotFound)}
 	default:
 		a.Status = vex.StatusUnderInvestigation
 		a.Confidence = 0.3
