@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -213,6 +214,16 @@ var ecosystems = map[string]ecosystemSpec{
 		},
 		manifestDecl:    pubManifestDecl,
 		reliableImports: true,
+	},
+	"hex": {
+		manifests:    []string{"mix.exs"},
+		lockfiles:    []string{"mix.lock"},
+		manifestDecl: hexManifestDecl,
+	},
+	"swift": {
+		manifests:    []string{"Package.swift"},
+		lockfiles:    []string{"Package.resolved"},
+		manifestDecl: swiftManifestDecl,
 	},
 }
 
@@ -624,6 +635,41 @@ func pubManifestDecl(content []byte, name string) (declared, devOnly bool) {
 	_, prod := m.Dependencies[name]
 	_, dev := m.DevDependencies[name]
 	return prod || dev, dev && !prod
+}
+
+func hexManifestDecl(content []byte, name string) (bool, bool) {
+	// shortcut: only literal dependency tuples are recognized; broaden if computed deps need coverage.
+	re := regexp.MustCompile(`\{\s*:` + regexp.QuoteMeta(name) + `\s*,`)
+	return re.Match(content), false
+}
+
+var (
+	swiftPackageRE = regexp.MustCompile(`(?s)\.package\s*\(([^)]*)\)`)
+	swiftNameRE    = regexp.MustCompile(`\bname\s*:\s*"([^"]+)"`)
+	swiftURLRE     = regexp.MustCompile(`\burl\s*:\s*"([^"]+)"`)
+)
+
+// swiftManifestDecl matches name (pkg:swift/github.com/owner/repo → "github.com/owner/repo")
+// against .package(url:) host/owner/repo or .package(name:) / url basename.
+func swiftManifestDecl(content []byte, name string) (bool, bool) {
+	// shortcut: only literal .package declarations are recognized; broaden if computed manifests need coverage.
+	base := path.Base(name)
+	for _, pkg := range swiftPackageRE.FindAllSubmatch(content, -1) {
+		if m := swiftNameRE.FindSubmatch(pkg[1]); m != nil && strings.EqualFold(string(m[1]), base) {
+			return true, false
+		}
+		if m := swiftURLRE.FindSubmatch(pkg[1]); m != nil {
+			u := string(m[1])
+			if i := strings.Index(u, "://"); i >= 0 {
+				u = u[i+3:]
+			}
+			u = strings.TrimSuffix(strings.TrimSuffix(u, "/"), ".git")
+			if strings.EqualFold(u, name) || strings.EqualFold(path.Base(u), base) {
+				return true, false
+			}
+		}
+	}
+	return false, false
 }
 
 func hasAnySuffix(s string, suffixes ...string) bool {

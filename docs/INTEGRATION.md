@@ -264,7 +264,8 @@ dependency resolution, `npm install`. The clone stays read-only apart from govul
   Composer, Maven, NuGet and Dart products get version evidence, OSV context, the lockfile
   graph (`dependency_path`, `dev_dependency`), manifest depth and a source import scan
   (`package_imported`, `import_not_found`, test paths excluded); Cargo additionally a
-  lexical check for RustSec's vulnerable functions. Only the exact facts listed under
+  lexical check for RustSec's vulnerable functions. Elixir/Hex and Swift/SPM currently
+  contribute manifest/lockfile presence only. Only the exact facts listed under
   "Strong evidence" can carry `not_affected`; everything else ends as `under_investigation`
   without an LLM, with a confidence that reflects the evidence. Advisories for npm, PyPI,
   Maven, NuGet and Composer carry no vulnerable-function data, so function-level

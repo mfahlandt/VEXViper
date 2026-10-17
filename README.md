@@ -311,6 +311,8 @@ marked strong:
 | Maven/Gradle | gradle.lockfile (flags only) | Gradle test-only configurations, pom `<scope>test</scope>` (manifest, weak) | Java package guessed from groupId/artifactId | ✘ inferred | – |
 | NuGet | packages.lock.json | – (weak: `PrivateAssets="all"`) | `using` namespace = package id | ✘ inferred | – |
 | Dart/pub | pubspec.lock (depth only) | – (weak: `dev_dependencies`) | `import 'package:…'` | ✘ no graph | – |
+| Elixir/Hex | mix.lock (presence only) | `mix.exs` dependency tuple (weak) | – | – | – |
+| Swift/SPM | Package.resolved (presence only) | `Package.swift` package URL/name (weak) | – | – | – |
 
 **Strong `dev_dependency`** — the package manager itself resolved the package outside the
 runtime closure, or the lockfile carries the complete edge set plus the root's runtime/dev

@@ -1,6 +1,6 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://vex.example.com/docs/public/vex-bfe81090111da477dc4b57634860270fbd9441e84c94e33b4df564e183912b91-sbom-123",
+  "@id": "https://vex.example.com/docs/public/vex-44006a61f4bf415a188fce92657c17e348ce93579c055f4383fa71516ee347fe-sbom-123",
   "author": "ACME Security",
   "role": "automated triage",
   "version": 1,
@@ -84,6 +84,7 @@
         "name": "GO-2023-2102",
         "description": "summary of GO-2023-2102",
         "aliases": [
+          "GHSA-xxxx-yyyy-zzzz",
           "CVE-2023-39325"
         ]
       },

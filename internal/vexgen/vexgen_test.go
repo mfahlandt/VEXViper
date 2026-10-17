@@ -50,7 +50,9 @@ func TestBuildGolden(t *testing.T) {
 		entry("CVE-2026-0002", "pkg:golang/github.com/foo/baz@v1.0.0",
 			llm.Assessment{Status: vex.StatusUnderInvestigation, Confidence: 0.3, Reasoning: "unclear", Provider: "heuristic"}),
 	}
-	entries[0].Report.OSV = &osv.Vulnerability{ID: "GO-2023-2102", Aliases: []string{"CVE-2023-39325"}}
+	entries[0].Report.OSV = &osv.Vulnerability{ID: "GO-2023-2102", Aliases: []string{
+		"GHSA-xxxx-yyyy-zzzz", "CVE-2023-39325", "GO-2023-2102", "CVE-2023-39325",
+	}}
 
 	res, err := Build("sbom-123", entries, Options{
 		Author: "ACME Security", AuthorRole: "automated triage", Supplier: "ACME", Tooling: "vexviper/test",
@@ -129,7 +131,8 @@ func TestBuildGolden(t *testing.T) {
 			t.Errorf("subcomponent id/purl mismatch: %+v", sc)
 		}
 	}
-	if a := parsed.Statements[3].Vulnerability.Aliases; len(a) != 1 || a[0] != "CVE-2023-39325" {
+	if a := parsed.Statements[3].Vulnerability.Aliases; len(a) != 2 ||
+		a[0] != "GHSA-xxxx-yyyy-zzzz" || a[1] != "CVE-2023-39325" {
 		t.Errorf("aliases = %v", a)
 	}
 }
