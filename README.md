@@ -74,6 +74,10 @@ Recommendation: run the **CronJob** with the heuristic provider first (no keys, 
 
 ## Quick start
 
+How-to guides: [run as a CronJob](docs/HOWTO-CRONJOB.md) ·
+[review drafts in pull requests](docs/HOWTO-GITOPS.md) ·
+[set up an LLM provider](docs/HOWTO-LLM.md).
+
 ```sh
 make build                                   # → bin/vexviper (needs Go ≥ 1.26 (image uses 1.27), git; govulncheck optional)
 
