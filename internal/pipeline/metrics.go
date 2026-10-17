@@ -22,6 +22,7 @@ type Metrics struct {
 	runs, runErrors    int
 	findings, skipped  int
 	settled, deferred  int
+	human              int
 	statements         map[vex.Status]int
 	guardrails         int
 	uploads            int
@@ -54,6 +55,7 @@ func (m *Metrics) RecordRun(out *Outcome, err error) {
 	m.findings += out.Findings
 	m.skipped += out.Skipped
 	m.settled += out.Settled
+	m.human += out.Human
 	m.deferred += out.Deferred
 	m.guardrails += len(out.Guardrails)
 	for s, n := range out.Counts {
@@ -111,6 +113,7 @@ func (m *Metrics) WriteTo(w io.Writer) (int64, error) {
 	p("vexviper_findings_assessed_total", "counter", "Findings that went through assessment.", m.findings)
 	p("vexviper_findings_skipped_total", "counter", "Findings skipped because they already had a VEX status.", m.skipped)
 	p("vexviper_findings_settled_kept_total", "counter", "Settled verdicts kept on --regenerate.", m.settled)
+	p("vexviper_findings_human_kept_total", "counter", "Findings skipped because a human (non-vexviper vex_tooling) wrote the verdict.", m.human)
 	p("vexviper_findings_deferred_total", "counter", "Findings left without statement because the provider budget was exhausted.", m.deferred)
 	p("vexviper_guardrails_applied_total", "counter", "Assessments downgraded by a guardrail.", m.guardrails)
 	p("vexviper_uploads_total", "counter", "VEX documents uploaded to BOMHort.", m.uploads)
