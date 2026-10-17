@@ -116,7 +116,7 @@ If `go` is not on PATH in your shell: `export PATH=$HOME/go/bin:$HOME/sdk/go<ver
 
 # Documentation is published on docs.bomhort.dev
 
-`README.md` and `docs/INTEGRATION.md` are rendered into
+`README.md`, `docs/INTEGRATION.md` and `docs/HOWTO-*.md` are rendered into
 https://docs.bomhort.dev/docs/ecosystem/vexviper/ by the BOMHort docs build
 (seebom-labs/BOMHort: `docs/content/docs/ecosystem/vexviper/_content.gotmpl`).
 The build takes `main` of this repository, daily and on every BOMHort docs
