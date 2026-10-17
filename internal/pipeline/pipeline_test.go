@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -590,6 +591,40 @@ func TestRunRegenerateKeepsSettledVerdicts(t *testing.T) {
 	}
 	if out.Findings != 6 || len(mock.Calls) != 6 {
 		t.Fatalf("force only: findings=%d calls=%d", out.Findings, len(mock.Calls))
+	}
+}
+
+// A verdict written by a human (vex_tooling not vexviper/...) is never
+// re-assessed by Regenerate or ReassessAfter, only by Force.
+func TestRunKeepsHumanVerdicts(t *testing.T) {
+	bh := bomhortFixture(t)
+	bh.vulns = append(bh.vulns,
+		bomhort.Vulnerability{VulnID: "GO-2025-0007", PURL: "pkg:golang/github.com/h/u@v1.0.0", Severity: "HIGH", VEXStatus: "affected", VEXTooling: "manual", VEXTimestamp: "2020-01-01T00:00:00Z"},
+		bomhort.Vulnerability{VulnID: "GO-2025-0008", PURL: "pkg:golang/github.com/b/o@v1.0.0", Severity: "HIGH", VEXStatus: "affected", VEXTooling: "vexviper/dev provider=mock"},
+	)
+	mock := &llm.Mock{Default: &llm.Assessment{Status: vex.StatusUnderInvestigation, Confidence: 0.5}}
+	p := newTestPipeline(t, bh, mock, nil)
+
+	out, err := p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1", Regenerate: true, ReassessAfter: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Human != 1 {
+		t.Fatalf("human=%d, want 1 (%+v)", out.Human, out)
+	}
+	for _, c := range mock.Calls {
+		if c.Report.Finding.VulnID == "GO-2025-0007" {
+			t.Fatal("human verdict was sent to the provider")
+		}
+	}
+	if !slices.ContainsFunc(mock.Calls, func(c llm.Request) bool { return c.Report.Finding.VulnID == "GO-2025-0008" }) {
+		t.Fatal("own bot verdict was not re-assessed")
+	}
+
+	mock.Calls = nil
+	out, _ = p.Run(context.Background(), RunOptions{SBOMRef: "sbom-1", Force: true})
+	if out.Human != 0 || !slices.ContainsFunc(mock.Calls, func(c llm.Request) bool { return c.Report.Finding.VulnID == "GO-2025-0007" }) {
+		t.Fatal("force must revisit human verdicts")
 	}
 }
 

@@ -106,8 +106,12 @@ bin/vexviper mcp-serve --transport http --addr 127.0.0.1:8765       # streamable
 Output filename: `<sbom-name>.vexviper.openvex.json`. Findings that already carry a
 `vex_status` are skipped by default. `--regenerate` re-assesses them **except settled
 verdicts** (`not_affected`, `fixed`) — no provider tokens are spent on findings that are
-already closed. `--force` is the hard regenerate that revisits everything.
-`--only CVE-…,GHSA-…` restricts the run.
+already closed, and **except human verdicts** — a statement whose `vex_tooling` is not
+`vexviper/…` was written by a person or another tool and is never overwritten by a bot.
+`--force` is the hard regenerate that revisits everything.
+`--only CVE-…,GHSA-…` restricts the run. On BOMHort ≥ 0.8 a statement applies to every
+alias of a vulnerability, so alias twins of one package (`GO-…` and its `CVE-…`) are
+assessed once and emitted once.
 
 ### Re-running over time
 

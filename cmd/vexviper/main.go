@@ -233,6 +233,9 @@ func printVerification(w io.Writer, v pipeline.Verification) {
 func printSummary(w io.Writer, res *pipeline.Outcome) {
 	fmt.Fprintf(w, "\nVEXViper summary for SBOM %s (%s)\n", res.Product.SBOMID, res.Product.DocumentName)
 	fmt.Fprintf(w, "  findings assessed: %d (skipped: %d, re-assessed: %d)\n", res.Findings, res.Skipped, res.Reassessed)
+	if res.Human > 0 {
+		fmt.Fprintf(w, "  human verdicts kept: %d (vex_tooling not vexviper; use --force to re-assess)\n", res.Human)
+	}
 	if res.Settled > 0 {
 		fmt.Fprintf(w, "  settled verdicts kept: %d (not_affected/fixed; use --force to re-assess)\n", res.Settled)
 	}

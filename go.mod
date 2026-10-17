@@ -24,3 +24,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/seebom-labs/bomhort-go => github.com/mfahlandt/bomhort-go v0.0.0-20261017110938-789804fa9c79
