@@ -113,3 +113,49 @@ If `go` is not on PATH in your shell: `export PATH=$HOME/go/bin:$HOME/sdk/go<ver
 - BOMHort uploads require `AUTH_ENABLED=true` and an `X-API-Key`/service token; VEXViper never disables auth on the BOMHort side.
 - Config/Helm: tokens via `secretKeyRef`/`existingSecret`; `examples/vexviper.yaml` ships empty credential fields only.
 - GitOps publishing (`internal/gitops`) pushes only to bot-owned `vex.git.branch_prefix` branches with `-f`; direct commits to the base branch are a non-forced push and require `branch_prefix: ""` explicitly. The token is read from `vex.git.token_env` (default `GITHUB_TOKEN`), passed to git via `GIT_CONFIG_*` env — never in argv or the remote URL — and redacted from errors/logs.
+
+# Documentation is published on docs.bomhort.dev
+
+`README.md` and `docs/INTEGRATION.md` are rendered into
+https://docs.bomhort.dev/docs/ecosystem/vexviper/ by the BOMHort docs build
+(seebom-labs/BOMHort: `docs/content/docs/ecosystem/vexviper/_content.gotmpl`).
+The build takes `main` of this repository, daily and on every BOMHort docs
+deploy. This repository stays the source of truth: never copy these files into
+BOMHort, and fix docs here.
+
+Rules for those files:
+
+- **Start with exactly one `# H1`.** It is removed; the page title comes from
+  the BOMHort adapter. Use `##` and below for everything else.
+- **No front matter.** The files must stay readable on GitHub.
+- **Link relatively** (`docs/INTEGRATION.md`, `../CHANGELOG.md`, `#section`). Links
+  between published files become site links. Every other relative link goes to
+  `github.com/seebom-labs/VEXViper/blob/main/...`, so it must resolve on `main`.
+  Anchors follow GitHub's heading IDs, so renaming a heading breaks inbound
+  `#links`.
+- **No relative images.** They would link to a GitHub page, not an image. Use
+  an absolute `https://raw.githubusercontent.com/...` URL or leave them out.
+- **HTML is rendered as-is** on the docs site. Write Markdown, not HTML.
+- **Moving or renaming a published file breaks the BOMHort docs build**; it
+  fails in production when a listed file is missing. Change the file list in
+  BOMHort in the same breath (PR there first, or right after).
+
+## Adding a page
+
+1. Add the file under `docs/` (one H1, rules above).
+2. Open a PR in seebom-labs/BOMHort that adds one line to
+   `docs/content/docs/ecosystem/vexviper/_content.gotmpl`:
+   `(dict "file" "docs/NEW.md" "path" "slug" "title" "Title" "weight" N)`.
+   Prefix how-to guides with `How to: ` and use a `how-to-` slug.
+   Link them from `docs/content/docs/ecosystem/_index.md` under "How-to guides".
+3. Check locally in BOMHort: `make docs-deps && make docs-serve`.
+
+Not published (repository-internal): `AGENTS.md`, `CONTRIBUTING.md`,
+`CHANGELOG.md`, `docs/RELEASING.md`. They are linked to GitHub instead.
+
+## How-to guides
+
+A how-to answers one task from start to finish for a user who already knows
+what BOMHort is: goal in one sentence, prerequisites, numbered steps with
+copy-paste commands, how to verify it worked, and what to do when it doesn't.
+No design rationale; link to the reference or design page instead.
