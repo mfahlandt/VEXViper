@@ -29,6 +29,11 @@ type Finding struct {
 	// VEXTimestamp is the timestamp of the effective statement behind
 	// VEXStatus (BOMHort #335); empty on BOMHort <= 0.6.1.
 	VEXTimestamp string
+	// VEXTooling is the tooling field of the effective statement (BOMHort
+	// #334); VEXViper's own statements start with "vexviper/".
+	VEXTooling string
+	// Aliases are the other OSV ids of the same flaw (BOMHort >= 0.8, #412).
+	Aliases []string
 	// Direct is true when the package is a direct dependency of the product.
 	Direct bool
 	// DirectKnown is false when the SBOM carries no relationship data at all.
@@ -121,21 +126,31 @@ func LoadSBOM(ctx context.Context, api API, s bomhort.SBOM) (*Result, error) {
 	// carries a vex_status (and, among those, the newest vex_timestamp).
 	seen := map[string]int{}
 	for _, v := range vulns {
+		purl := strings.TrimSpace(v.PURL)
 		f := Finding{
 			VulnID:       strings.TrimSpace(v.VulnID),
-			PURL:         strings.TrimSpace(v.PURL),
+			PURL:         purl,
 			Severity:     v.Severity,
 			Summary:      v.Summary,
 			FixedVersion: v.FixedVersion,
 			VEXStatus:    v.VEXStatus,
 			VEXTimestamp: v.VEXTimestamp,
-			Direct:       direct[v.PURL],
+			VEXTooling:   v.VEXTooling,
+			Aliases:      v.Aliases,
+			Direct:       direct[purl],
 			DirectKnown:  directKnown,
 		}
-		if n, ok := names[v.PURL]; ok {
+		// BOMHort >= 0.8 stores the scope at parse time (#444); trust it over
+		// our own tree walk. "unknown" (flat SBOM, pre-025 row) and "root"
+		// (the product itself) carry no direct/transitive information.
+		switch v.DependencyScope {
+		case "direct", "transitive":
+			f.Direct, f.DirectKnown = v.DependencyScope == "direct", true
+		}
+		if n, ok := names[purl]; ok {
 			f.PackageName, f.PackageVersion = n.Name, n.Version
 		} else if doc != nil {
-			if c, ok := doc.ByPURL()[v.PURL]; ok {
+			if c, ok := doc.ByPURL()[purl]; ok {
 				f.PackageName, f.PackageVersion = c.Name, c.Version
 			}
 		}
@@ -143,8 +158,17 @@ func LoadSBOM(ctx context.Context, api API, s bomhort.SBOM) (*Result, error) {
 			slog.Warn("source: skipping finding without vuln_id or purl", "sbom", s.ID, "vuln", v.VulnID, "purl", v.PURL)
 			continue
 		}
-		key := f.VulnID + "\x00" + f.PURL
-		if i, dup := seen[key]; dup {
+		// Since 0.8 BOMHort applies a statement to every finding whose
+		// vuln_id or alias matches (#412), so alias twins of one purl are a
+		// single finding for us: assess once, emit once.
+		var dup bool
+		var i int
+		for _, id := range append([]string{f.VulnID}, f.Aliases...) {
+			if i, dup = seen[id+"\x00"+f.PURL]; dup {
+				break
+			}
+		}
+		if dup {
 			// Pre-#335 BOMHort emits one row per matching VEX statement, so
 			// several documents for the same (vuln, purl) surface as
 			// duplicates with possibly different statuses. Any non-empty
@@ -153,13 +177,15 @@ func LoadSBOM(ctx context.Context, api API, s bomhort.SBOM) (*Result, error) {
 			switch {
 			case f.VEXStatus == "":
 			case prev.VEXStatus == "":
-				prev.VEXStatus, prev.VEXTimestamp = f.VEXStatus, f.VEXTimestamp
+				prev.VEXStatus, prev.VEXTimestamp, prev.VEXTooling = f.VEXStatus, f.VEXTimestamp, f.VEXTooling
 			case f.VEXStatus != prev.VEXStatus:
 				slog.Debug("source: conflicting vex_status rows", "sbom", s.ID, "vuln", f.VulnID, "purl", f.PURL, "kept", prev.VEXStatus, "other", f.VEXStatus)
 			}
 			continue
 		}
-		seen[key] = len(res.Findings)
+		for _, id := range append([]string{f.VulnID}, f.Aliases...) {
+			seen[id+"\x00"+f.PURL] = len(res.Findings)
+		}
 		res.Findings = append(res.Findings, f)
 	}
 	return res, nil

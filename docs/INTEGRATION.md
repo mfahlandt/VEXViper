@@ -22,8 +22,8 @@ API** (`docs/api-reference` calls this "custom tooling"). Benefits:
 |---|---|---|
 | `GET /health` | readiness | `Healthy` |
 | `GET /api/v1/sboms?page&page_size&search` | enumerate SBOMs (watch mode, `--sbom` lookup by id / `document_name` / `source_file`); `source_repo`/`source_ref` feed repo resolution (#332) | `ListSBOMs`, `AllSBOMs`, `FindSBOM` |
-| `GET /api/v1/sboms/{id}/vulnerabilities` | **the findings**: `vuln_id`, `purl`, `severity`, `summary`, `fixed_version`, `vex_status` (+ `vex_timestamp`, `vex_justification`, `vex_scope` since #335/#350) | `Vulnerabilities` |
-| `GET /api/v1/sboms/{id}/dependencies` | dependency tree → direct/transitive evidence | `Dependencies` |
+| `GET /api/v1/sboms/{id}/vulnerabilities` | **the findings**: `vuln_id`, `purl`, `severity`, `summary`, `fixed_version`, `vex_status` (+ `vex_timestamp`, `vex_justification`, `vex_scope` since #335/#350; `dependency_scope` is the authoritative direct/transitive flag since 0.8.0 #444) | `Vulnerabilities` |
+| `GET /api/v1/sboms/{id}/dependencies` | dependency tree → package names; direct/transitive fallback for BOMHort < 0.8 or `dependency_scope: unknown` | `Dependencies` |
 | `GET /api/v1/sboms/{id}/download` | original SBOM → repository hints only (VCS external refs, root PURLs, main Go module) | `DownloadSBOM` |
 | `POST /api/v1/sboms/upload?sbom_id={id}` + `X-Filename: <name>.openvex.json` + `X-API-Key` | ingest the generated document, scoped to the SBOM it describes (#350) | `UploadVEX` |
 | `GET /api/v1/vex/statements` | verify ingestion (`--wait`) | `AllVEXStatements`, `ListVEXStatements` |
@@ -133,6 +133,8 @@ Filed as tracking epic [BOMHort#338](https://github.com/seebom-labs/BOMHort/issu
 | [#334](https://github.com/seebom-labs/BOMHort/issues/334) | statement provenance + automated/human badge | **landed** (BOMHort ≥ 0.7.0) — `author`/`role`/`tooling`/`status_notes` surfaced |
 | [#337](https://github.com/seebom-labs/BOMHort/issues/337) | outbound webhooks | open |
 | [#350](https://github.com/seebom-labs/BOMHort/issues/350) | per-SBOM statement scoping (`?sbom_id=` upload, `vex_scope`) | **landed** (BOMHort ≥ 0.7.0) — VEXViper always uploads scoped |
+| [#412](https://github.com/seebom-labs/BOMHort/issues/412) | `cve_id` / `aliases` on findings, alias-aware VEX matching | **landed** (BOMHort ≥ 0.8.0) — alias twins collapse to one finding; all OSV aliases emitted |
+| [#444](https://github.com/seebom-labs/BOMHort/issues/444) | `dependency_scope` / `dependency_depth`, `?scope=` filter | **landed** (BOMHort ≥ 0.8.0) — authoritative direct/transitive flag, tree walk is the fallback |
 
 The original proposal text is kept below for context.
 

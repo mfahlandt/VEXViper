@@ -109,6 +109,71 @@ func TestLoadUnparsableSBOMAndNoEdges(t *testing.T) {
 	}
 }
 
+// BOMHort >= 0.8 dependency_scope wins over the tree walk; "unknown" does not.
+func TestLoadPrefersBOMHortDependencyScope(t *testing.T) {
+	api := &fakeAPI{
+		sbom: bomhort.SBOM{ID: "id-5"},
+		vulns: []bomhort.Vulnerability{
+			{VulnID: "CVE-1", PURL: "pkg:npm/a@1", DependencyScope: "transitive"},
+			{VulnID: "CVE-2", PURL: "pkg:npm/b@1", DependencyScope: "direct"},
+			{VulnID: "CVE-3", PURL: "pkg:npm/c@1", DependencyScope: "unknown"},
+		},
+		// Tree says a is direct, b and c have no edge → fallback has DirectKnown but a wrong answer for a.
+		deps: []bomhort.DependencyNode{{Index: 0, Children: []uint32{1}}, {Index: 1, PURL: "pkg:npm/a@1"}},
+		raw:  []byte("garbage"),
+	}
+	res, err := Load(context.Background(), api, "id-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ direct, known bool }{{false, true}, {true, true}, {false, true}}
+	for i, w := range want {
+		if f := res.Findings[i]; f.Direct != w.direct || f.DirectKnown != w.known {
+			t.Errorf("%s = direct %v known %v, want %v/%v", f.VulnID, f.Direct, f.DirectKnown, w.direct, w.known)
+		}
+	}
+	api.deps = nil
+	res, _ = Load(context.Background(), api, "id-5")
+	if f := res.Findings[2]; f.DirectKnown {
+		t.Errorf("unknown scope without tree must stay DirectKnown=false: %+v", f)
+	}
+	if f := res.Findings[1]; !f.Direct || !f.DirectKnown {
+		t.Errorf("direct scope must not need a tree: %+v", f)
+	}
+}
+
+// Alias twins of one purl collapse into one finding (BOMHort >= 0.8 applies
+// a statement to every alias); root scope carries no direct/transitive info.
+func TestLoadCollapsesAliasTwinsAndIgnoresRoot(t *testing.T) {
+	api := &fakeAPI{
+		sbom: bomhort.SBOM{ID: "id-6"},
+		vulns: []bomhort.Vulnerability{
+			{VulnID: "GO-2024-3333", PURL: " pkg:golang/x@1 ", Aliases: []string{"CVE-2024-45338", "GHSA-w32m"}, DependencyScope: "root"},
+			{VulnID: "CVE-2024-45338", PURL: "pkg:golang/x@1", VEXStatus: "affected", VEXTooling: "manual"},
+			{VulnID: "GHSA-w32m", PURL: "pkg:golang/x@1"},
+			{VulnID: "CVE-2024-45338", PURL: "pkg:golang/y@1"},
+		},
+		deps: []bomhort.DependencyNode{{Index: 0, PURL: "pkg:golang/x@1", Name: "x"}},
+	}
+	res, err := Load(context.Background(), api, "id-6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Findings) != 2 {
+		t.Fatalf("findings = %+v", res.Findings)
+	}
+	x := res.Findings[0]
+	if x.VulnID != "GO-2024-3333" || x.PURL != "pkg:golang/x@1" || x.VEXStatus != "affected" || x.VEXTooling != "manual" || x.PackageName != "x" {
+		t.Errorf("twin not collapsed/trimmed: %+v", x)
+	}
+	if x.DirectKnown {
+		t.Errorf("root scope must not set DirectKnown (no tree edges): %+v", x)
+	}
+	if res.Findings[1].PURL != "pkg:golang/y@1" {
+		t.Errorf("different purl must stay separate: %+v", res.Findings[1])
+	}
+}
+
 func TestLoadNotFound(t *testing.T) {
 	if _, err := Load(context.Background(), &fakeAPI{sbom: bomhort.SBOM{ID: "x"}}, "y"); err == nil {
 		t.Fatal("expected error")

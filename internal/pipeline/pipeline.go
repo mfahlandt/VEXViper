@@ -255,6 +255,9 @@ type Outcome struct {
 	Settled int
 	// Reassessed counts findings included because their statement expired.
 	Reassessed int
+	// Human counts skipped findings whose effective statement was not
+	// written by VEXViper (vex_tooling); only Force revisits them.
+	Human int
 	// Deferred counts findings left unassessed (no statement emitted)
 	// because the provider budget was exhausted; a later run picks them up.
 	Deferred int
@@ -335,6 +338,12 @@ func (p *Pipeline) run(ctx context.Context, opts RunOptions) (*Outcome, error) {
 	for _, f := range res.Findings {
 		if f.VEXStatus != "" && !opts.Force {
 			switch {
+			case f.VEXTooling != "" && !strings.HasPrefix(f.VEXTooling, "vexviper/"):
+				// A human (or another tool) wrote this verdict; never
+				// overwrite it with a bot verdict short of Force.
+				out.Skipped++
+				out.Human++
+				continue
 			case opts.Regenerate && !settled[f.VEXStatus]:
 			case stale[statementKey(f.VulnID, f.PURL)]:
 				out.Reassessed++
