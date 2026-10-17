@@ -241,9 +241,46 @@ func TestEcosystemEvidenceUnknownOrNoRepo(t *testing.T) {
 	if got := c.ecosystemEvidence(dir, source.Finding{PURL: "pkg:golang/x@1"}); got != nil {
 		t.Fatalf("golang is not handled here: %v", got)
 	}
-	if got := c.ecosystemEvidence(dir, source.Finding{PURL: "pkg:hex/foo@1"}); got != nil {
-		t.Fatalf("unknown ecosystem: %v", got)
-	}
+}
+
+func TestEcosystemEvidenceHexAndSwift(t *testing.T) {
+	c := &Collector{}
+	t.Run("Hex manifest declaration", func(t *testing.T) {
+		dir := writeTree(t, map[string]string{
+			"mix.exs":    "defp deps do\n  [{:plug, \"~> 1.15\"}]\nend\n",
+			"mix.lock":   `%{"plug": {:hex, :plug, "1.15.3", "checksum", [], "hexpm", "..."}}`,
+			"lib/app.ex": "defmodule App do\nend\n",
+		})
+		items := c.ecosystemEvidence(dir, source.Finding{PURL: "pkg:hex/plug@1.15.3"})
+		if !hasKind(items, KindDirectDependency) || hasKind(items, KindPackageImported) {
+			t.Fatalf("kinds = %v", kindsOf(items))
+		}
+		for _, item := range items {
+			if item.Strong {
+				t.Fatalf("Hex manifest evidence must remain weak: %+v", item)
+			}
+		}
+	})
+	t.Run("Swift package URL declaration", func(t *testing.T) {
+		dir := writeTree(t, map[string]string{
+			"Package.swift": `let package = Package(
+				dependencies: [
+					.package(url: "https://github.com/apple/swift-collections.git", from: "1.0.0")
+				]
+			)`,
+			"Package.resolved":  `{"pins":[{"identity":"swift-collections"}]}`,
+			"Sources/App.swift": "import Collections\n",
+		})
+		items := c.ecosystemEvidence(dir, source.Finding{PURL: "pkg:swift/github.com/apple/swift-collections@1.1.0"})
+		if !hasKind(items, KindDirectDependency) || hasKind(items, KindPackageImported) {
+			t.Fatalf("kinds = %v", kindsOf(items))
+		}
+		for _, item := range items {
+			if item.Strong {
+				t.Fatalf("Swift manifest evidence must remain weak: %+v", item)
+			}
+		}
+	})
 }
 
 func TestEcosystemEvidenceMaxFiles(t *testing.T) {

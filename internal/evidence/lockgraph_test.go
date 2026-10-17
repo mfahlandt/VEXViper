@@ -728,6 +728,12 @@ func TestStrongImportNotFound(t *testing.T) {
 			t.Fatalf("strong = %v", got)
 		}
 	})
+	t.Run("BOMHort says direct (star-shaped SBOM) but lockfile shows a dependent → not strong", func(t *testing.T) {
+		items := c.ecosystemEvidence(writeTree(t, base), source.Finding{PURL: "pkg:npm/qs@6.11.0", DirectKnown: true, Direct: true})
+		if got := strongKinds(items); len(got) != 0 {
+			t.Fatalf("strong = %v", got)
+		}
+	})
 	t.Run("used in npm scripts → not strong", func(t *testing.T) {
 		files := map[string]string{}
 		for k, v := range base {

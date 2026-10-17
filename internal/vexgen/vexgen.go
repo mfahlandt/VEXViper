@@ -140,8 +140,12 @@ func Build(productID string, entries []Entry, opts Options) (*Result, error) {
 			ActionStatement: a.ActionStatement,
 		}
 		if e.Report.OSV != nil {
-			if cve := e.Report.OSV.CVE(); cve != "" && cve != f.VulnID {
-				stmt.Vulnerability.Aliases = append(stmt.Vulnerability.Aliases, vex.VulnerabilityID(cve))
+			seenAliases := map[string]bool{f.VulnID: true}
+			for _, alias := range e.Report.OSV.Aliases {
+				if alias != "" && !seenAliases[alias] {
+					stmt.Vulnerability.Aliases = append(stmt.Vulnerability.Aliases, vex.VulnerabilityID(alias))
+					seenAliases[alias] = true
+				}
 			}
 			if stmt.Vulnerability.Description == "" {
 				stmt.Vulnerability.Description = e.Report.OSV.Summary
